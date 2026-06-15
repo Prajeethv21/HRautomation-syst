@@ -795,86 +795,196 @@ function handleProcessResumes(sheetId) {
   }
 }
 
-// Core parsing logic for resume uploads
-function processIncomingResumes(sheetId) {
-  if (!RESUME_FOLDER_ID || RESUME_FOLDER_ID === "12345_PLACEHOLDER_FOLDER_ID_67890") {
-    Logger.log("Resume uploads folder ID is not configured.");
-    return 0;
+/// Core setup helper to get or create folders dynamically
+function getOrCreateFolder(parent, name) {
+  var folders = parent ? parent.getFoldersByName(name) : DriveApp.getFoldersByName(name);
+  if (folders.hasNext()) {
+    return folders.next();
+  } else {
+    return parent ? parent.createFolder(name) : DriveApp.createFolder(name);
   }
+}
 
-  var folder = DriveApp.getFolderById(RESUME_FOLDER_ID);
-  var files = folder.getFiles();
-
-  // Track processed file IDs using a local Spreadsheet sheet for visibility and self-healing
-  var ss = sheetId ? SpreadsheetApp.openById(sheetId) : SpreadsheetApp.getActiveSpreadsheet();
-  var logSheet = ss.getSheetByName("ProcessedResumes");
-  if (!logSheet) {
-    logSheet = ss.insertSheet("ProcessedResumes");
-    logSheet.appendRow(["File ID", "Candidate Name", "Email", "Processed Date"]);
-  }
-
-  var processedLog = logSheet.getDataRange().getValues();
-  var processedIds = new Set();
-  for (var i = 1; i < processedLog.length; i++) {
-    if (processedLog[i][0]) {
-      processedIds.add(processedLog[i][0].toString().trim());
+// Move file utility supporting modern and legacy environments
+function moveFileToFolder(file, targetFolder) {
+  try {
+    file.moveTo(targetFolder);
+  } catch (e) {
+    targetFolder.addFile(file);
+    var parents = file.getParents();
+    while (parents.hasNext()) {
+      parents.next().removeFile(file);
     }
   }
+}
 
+// Keyword-based department classification matching the exact criteria
+function classifyDepartment(text) {
+  var lowerText = text.toLowerCase();
+  
+  var sustainabilityKeywords = ["esg", "sustainability", "ghg", "carbon accounting", "scope 1", "scope 2", "scope 3", "sdg"];
+  var aiKeywords = ["python", "ai", "llm", "machine learning", "automation", "langchain", "openai"];
+  var webKeywords = ["react", "javascript", "typescript", "node.js", "html", "css"];
+  
+  var sustainabilityCount = 0;
+  var aiCount = 0;
+  var webCount = 0;
+  
+  function countOccurrences(str, keyword) {
+    var count = 0;
+    var pos = str.indexOf(keyword);
+    while (pos !== -1) {
+      count++;
+      pos = str.indexOf(keyword, pos + keyword.length);
+    }
+    return count;
+  }
+  
+  sustainabilityKeywords.forEach(function(kw) {
+    sustainabilityCount += countOccurrences(lowerText, kw);
+  });
+  
+  aiKeywords.forEach(function(kw) {
+    aiCount += countOccurrences(lowerText, kw);
+  });
+  
+  webKeywords.forEach(function(kw) {
+    webCount += countOccurrences(lowerText, kw);
+  });
+  
+  Logger.log("[CLASSIFICATION] Sustainability count: " + sustainabilityCount + " | AI count: " + aiCount + " | Web count: " + webCount);
+  
+  if (aiCount > sustainabilityCount && aiCount > webCount) {
+    return "AI Automation Engineer";
+  } else if (webCount > sustainabilityCount && webCount > aiCount) {
+    return "Web Developer";
+  } else {
+    return "Sustainability";
+  }
+}
+
+// Process resumes in a specific source folder and move to destination folder
+function processFolderResumes(sheetId, sourceFolder, sourceName, destFolder) {
+  var files = sourceFolder.getFiles();
   var processedCount = 0;
+  
+  var ss = sheetId ? SpreadsheetApp.openById(sheetId) : SpreadsheetApp.getActiveSpreadsheet();
+  var masterSheet = ss.getSheetByName("Candidates");
 
   while (files.hasNext()) {
     var file = files.next();
     var fileId = file.getId();
     var mimeType = file.getMimeType();
-
-    // Process only unprocessed PDF/DOCX files
-    if (processedIds.has(fileId)) {
-      continue;
-    }
+    var fileName = file.getName();
 
     var isPDF = mimeType === "application/pdf";
     var isDOCX = mimeType === "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
 
-    if (isPDF || isDOCX) {
-      try {
-        Logger.log("Processing resume: " + file.getName());
-        var rawText = "";
+    if (!isPDF && !isDOCX) {
+      continue;
+    }
 
-        if (isPDF) {
-          rawText = extractTextFromPDF(fileId);
-        } else if (isDOCX) {
-          rawText = extractTextFromDOCX(fileId);
-        }
+    Logger.log("[DETECTED] Resume detected: " + fileName + " in folder: " + sourceFolder.getName());
 
-        if (rawText) {
-          var details = parseCandidateDetails(rawText);
-          details.resumeFileId = fileId;
-          details.source = "Manual Entry";
-          details.status = "Interviewing";
-          details.emailStatus = "Pending";
+    try {
+      var rawText = "";
 
-          if (!details.name) {
-            details.name = file.getName().replace(/\.[^/.]+$/, ""); // fallback to filename without extension
-          }
-          if (!details.email) {
-            details.email = "no-email-found-" + fileId.substring(0, 6) + "@example.com";
-          }
-
-          // Append candidate and route to sheets
-          handleCreateCandidate(sheetId, details);
-
-          // Log processing to prevent double parsing
-          logSheet.appendRow([fileId, details.name, details.email, new Date()]);
-          processedCount++;
-        }
-      } catch (err) {
-        Logger.log("Error parsing " + file.getName() + ": " + err.toString());
+      if (isPDF) {
+        rawText = extractTextFromPDF(fileId);
+      } else if (isDOCX) {
+        rawText = extractTextFromDOCX(fileId);
       }
+
+      if (rawText) {
+        var details = parseCandidateDetails(rawText);
+        details.resumeFileId = fileId;
+        details.source = sourceName;
+        details.status = "On Hold";
+        details.emailStatus = "Pending";
+
+        if (!details.name) {
+          details.name = fileName.replace(/\.[^/.]+$/, "");
+        }
+
+        // Determine department based on keywords
+        details.role = classifyDepartment(rawText);
+        Logger.log("[DEPARTMENT ASSIGNED] Department determined for candidate " + details.name + " (" + sourceName + "): " + details.role);
+
+        // Check duplicate email
+        var emailToCheck = details.email ? details.email.trim().toLowerCase() : "";
+        var emailExists = false;
+        
+        if (emailToCheck) {
+          var masterData = masterSheet.getDataRange().getValues();
+          for (var i = 1; i < masterData.length; i++) {
+            if (masterData[i][1] && masterData[i][1].toString().trim().toLowerCase() === emailToCheck) {
+              emailExists = true;
+              break;
+            }
+          }
+        }
+
+        if (emailExists) {
+          Logger.log("[DUPLICATE SKIPPED] Duplicate email " + details.email + " detected. Skipping candidate creation.");
+          moveFileToFolder(file, destFolder);
+          Logger.log("[FILE MOVED] Duplicate resume file " + fileName + " moved to " + destFolder.getName());
+          continue;
+        }
+
+        if (!details.email) {
+          details.email = "no-email-found-" + fileId.substring(0, 6) + "@example.com";
+          Logger.log("[WARNING] No email found in resume. Using placeholder: " + details.email);
+        }
+
+        // Append candidate and route to sheets
+        var createResult = handleCreateCandidate(sheetId, details);
+        Logger.log("[CANDIDATE CREATED] Candidate " + details.name + " created successfully under role: " + details.role);
+
+        // Move file to processed folder
+        moveFileToFolder(file, destFolder);
+        Logger.log("[FILE MOVED] Processed resume file " + fileName + " moved to " + destFolder.getName());
+        
+        processedCount++;
+      } else {
+        Logger.log("[WARNING] Unable to extract text from file: " + fileName);
+      }
+    } catch (err) {
+      Logger.log("[ERROR] Error processing " + fileName + ": " + err.toString());
     }
   }
 
   return processedCount;
+}
+
+// Core parsing logic for resume uploads
+function processIncomingResumes(sheetId) {
+  var hrResumesFolder;
+  
+  if (typeof RESUME_FOLDER_ID !== "undefined" && RESUME_FOLDER_ID && RESUME_FOLDER_ID !== "12345_PLACEHOLDER_FOLDER_ID_67890") {
+    try {
+      hrResumesFolder = DriveApp.getFolderById(RESUME_FOLDER_ID);
+    } catch (e) {
+      Logger.log("Configured RESUME_FOLDER_ID is invalid or inaccessible: " + e.toString() + ". Searching by name.");
+    }
+  }
+  
+  if (!hrResumesFolder) {
+    hrResumesFolder = getOrCreateFolder(null, "HR Resumes");
+  }
+
+  var linkedinFolder = getOrCreateFolder(hrResumesFolder, "LinkedIn");
+  var otherFolder = getOrCreateFolder(hrResumesFolder, "Other");
+  var processedFolder = getOrCreateFolder(hrResumesFolder, "Processed");
+  
+  var processedLinkedinFolder = getOrCreateFolder(processedFolder, "LinkedIn");
+  var processedOtherFolder = getOrCreateFolder(processedFolder, "Other");
+
+  var count = 0;
+  count += processFolderResumes(sheetId, linkedinFolder, "LinkedIn", processedLinkedinFolder);
+  count += processFolderResumes(sheetId, otherFolder, "Other", processedOtherFolder);
+
+  Logger.log("[PROCESSED] Successfully scanned and ingested " + count + " new resumes.");
+  return count;
 }
 
 // Convert PDF to Google Doc temporarily via OCR, read text, and clean up
@@ -1027,45 +1137,64 @@ function parseCandidateDetails(text) {
 
   // Route candidate using keyword matching scores
   var fullLower = text.toLowerCase();
-  var aiScore = (fullLower.match(/ai|machine learning|python|llm|gpt|claude|openai|agent|automation|prompt/g) || []).length;
-  var sustainabilityScore = (fullLower.match(/sustainability|climate|environment|carbon|green|energy|solar/g) || []).length;
-  var webScore = (fullLower.match(/web|html|css|javascript|react|vue|angular|typescript|frontend|backend|nodejs/g) || []).length;
-
-  if (aiScore > sustainabilityScore && aiScore > webScore) {
-    details.role = "AI Automation Engineer";
-  } else if (webScore > sustainabilityScore && webScore > aiScore) {
-    details.role = "Web Developer";
-  } else {
-    details.role = "Sustainability";
-  }
+  details.role = classifyDepartment(fullLower);
 
   return details;
 }
 
-// Scheduled Trigger cleanup function: moves resume files older than 14 days to trash
+// Scheduled Trigger cleanup function: moves resume files older than 15 days from Processed subfolders to trash
 function cleanupOldResumes() {
-  if (!RESUME_FOLDER_ID || RESUME_FOLDER_ID === "12345_PLACEHOLDER_FOLDER_ID_67890") {
-    Logger.log("Resume folder ID not set. Cleanup skipped.");
-    return;
+  cleanupProcessedResumes();
+}
+
+function cleanupProcessedResumes() {
+  var hrResumesFolder;
+  
+  if (typeof RESUME_FOLDER_ID !== "undefined" && RESUME_FOLDER_ID && RESUME_FOLDER_ID !== "12345_PLACEHOLDER_FOLDER_ID_67890") {
+    try {
+      hrResumesFolder = DriveApp.getFolderById(RESUME_FOLDER_ID);
+    } catch (e) {
+      Logger.log("Configured RESUME_FOLDER_ID failed to load: " + e.toString());
+    }
   }
-
-  var folder = DriveApp.getFolderById(RESUME_FOLDER_ID);
-  var files = folder.getFiles();
-  var now = new Date();
-  var limit = 14 * 24 * 60 * 60 * 1000; // 14 days in milliseconds
-  var count = 0;
-
-  while (files.hasNext()) {
-    var file = files.next();
-    var created = file.getDateCreated();
-    if (now.getTime() - created.getTime() > limit) {
-      Logger.log("Deleting old source resume file: " + file.getName());
-      file.setTrashed(true); // Soft delete / move to Drive Trash
-      count++;
+  
+  if (!hrResumesFolder) {
+    var folders = DriveApp.getFoldersByName("HR Resumes");
+    if (folders.hasNext()) {
+      hrResumesFolder = folders.next();
+    } else {
+      Logger.log("HR Resumes folder not found. Cleanup skipped.");
+      return;
     }
   }
 
-  Logger.log("Cleanup complete. Removed " + count + " files.");
+  var processedFolder = getOrCreateFolder(hrResumesFolder, "Processed");
+  var processedLinkedinFolder = getOrCreateFolder(processedFolder, "LinkedIn");
+  var processedOtherFolder = getOrCreateFolder(processedFolder, "Other");
+
+  var deletedCount = 0;
+  deletedCount += deleteOldFilesFromFolder(processedLinkedinFolder, 15);
+  deletedCount += deleteOldFilesFromFolder(processedOtherFolder, 15);
+
+  Logger.log("[CLEANUP] Deleted " + deletedCount + " processed resumes older than 15 days.");
+}
+
+function deleteOldFilesFromFolder(folder, ageInDays) {
+  var files = folder.getFiles();
+  var now = new Date();
+  var limitMs = ageInDays * 24 * 60 * 60 * 1000;
+  var deleteCount = 0;
+
+  while (files.hasNext()) {
+    var file = files.next();
+    var createdDate = file.getDateCreated();
+    if (now.getTime() - createdDate.getTime() > limitMs) {
+      Logger.log("[FILE DELETED] Processed resume file " + file.getName() + " deleted (older than " + ageInDays + " days).");
+      file.setTrashed(true); // Soft delete / move to trash
+      deleteCount++;
+    }
+  }
+  return deleteCount;
 }
 
 /**
