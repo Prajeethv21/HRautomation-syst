@@ -935,7 +935,7 @@ function processNewResumes(sheetId) {
               Logger.log("[DUPLICATE SKIPPED] Candidate email " + details.email + " already exists. Skipping sheet creation.");
               moveProcessedResume(file, sourceName, roleName, hrResumesFolder);
               Logger.log("[FILE MOVED] Duplicate resume file " + fileName + " archived to Processed/" + sourceName + "/" + roleName);
-              continue;
+              return;
             }
             
             if (!details.email) {
