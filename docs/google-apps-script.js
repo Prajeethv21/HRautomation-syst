@@ -827,9 +827,28 @@ function moveProcessedResume(file, sourceName, roleName, hrResumesFolder) {
 function processNewResumes(sheetId) {
   var hrResumesFolder;
   
+  // Drive Audit logging
+  try {
+    var folderSearch = DriveApp.getFoldersByName("HR Resumes");
+    var folderIndex = 1;
+    while (folderSearch.hasNext()) {
+      var f = folderSearch.next();
+      var parentNames = [];
+      var parents = f.getParents();
+      while (parents.hasNext()) {
+        parentNames.push(parents.next().getName());
+      }
+      Logger.log("[DRIVE AUDIT] Found folder named 'HR Resumes' #" + folderIndex + " - ID: " + f.getId() + " - Parent(s): " + parentNames.join(", "));
+      folderIndex++;
+    }
+  } catch (err) {
+    Logger.log("[DRIVE AUDIT] Error listing folders named 'HR Resumes': " + err.toString());
+  }
+
   if (typeof RESUME_FOLDER_ID !== "undefined" && RESUME_FOLDER_ID && RESUME_FOLDER_ID !== "12345_PLACEHOLDER_FOLDER_ID_67890") {
     try {
       hrResumesFolder = DriveApp.getFolderById(RESUME_FOLDER_ID);
+      Logger.log("[DRIVE AUDIT] Using RESUME_FOLDER_ID: " + RESUME_FOLDER_ID);
     } catch (e) {
       Logger.log("Configured RESUME_FOLDER_ID is invalid or inaccessible: " + e.toString() + ". Searching by name.");
     }
@@ -837,6 +856,7 @@ function processNewResumes(sheetId) {
   
   if (!hrResumesFolder) {
     hrResumesFolder = getOrCreateFolder(null, "HR Resumes");
+    Logger.log("[DRIVE AUDIT] Resolved/Created 'HR Resumes' folder - ID: " + hrResumesFolder.getId());
   }
 
   var sources = ["LinkedIn", "Other"];
@@ -848,22 +868,31 @@ function processNewResumes(sheetId) {
 
   sources.forEach(function(sourceName) {
     var sourceFolder = getOrCreateFolder(hrResumesFolder, sourceName);
+    Logger.log("[DRIVE AUDIT] Source folder: " + sourceName + " - ID: " + sourceFolder.getId());
     
     roles.forEach(function(roleName) {
       var roleFolder = getOrCreateFolder(sourceFolder, roleName);
       var files = roleFolder.getFiles();
       
+      var tempFiles = [];
       while (files.hasNext()) {
-        var file = files.next();
+        tempFiles.push(files.next());
+      }
+      
+      Logger.log("[DRIVE AUDIT] Role folder: " + roleName + " - ID: " + roleFolder.getId() + " - Files Found: " + tempFiles.length);
+      
+      tempFiles.forEach(function(file) {
         var fileId = file.getId();
         var mimeType = file.getMimeType();
         var fileName = file.getName();
+        Logger.log("[DRIVE AUDIT] File Found - Name: " + fileName + " - ID: " + fileId + " - MimeType: " + mimeType);
         
         var isPDF = mimeType === "application/pdf";
         var isDOCX = mimeType === "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
         
         if (!isPDF && !isDOCX) {
-          continue;
+          Logger.log("[DRIVE AUDIT] File skipped due to unsupported file type: " + fileName);
+          return;
         }
         
         Logger.log("[DETECTED] Resume detected: " + fileName + " in folder: " + sourceName + "/" + roleName);
