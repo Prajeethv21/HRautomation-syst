@@ -66,8 +66,16 @@ function generateJoiningLetter(candidate) {
   const doc = DocumentApp.openById(copyId);
   const body = doc.getBody();
 
+  var joiningDateObj = new Date();
+  if (candidate.joiningDate) {
+    var parsedDate = new Date(candidate.joiningDate);
+    if (!isNaN(parsedDate.getTime())) {
+      joiningDateObj = parsedDate;
+    }
+  }
+
   const formattedJoiningDate = Utilities.formatDate(
-    new Date(candidate.joiningDate),
+    joiningDateObj,
     Session.getScriptTimeZone(),
     "dd MMM yyyy"
   );
@@ -207,6 +215,62 @@ function onOpen() {
     .addToUi();
 }
 
+// Bidirectional status synchronization trigger
+function onEdit(e) {
+  if (!e || !e.range) return;
+  var range = e.range;
+  var sheet = range.getSheet();
+  var sheetName = sheet.getName();
+  var row = range.getRow();
+  var col = range.getColumn();
+  var val = range.getValue().toString().trim();
+  
+  if (row <= 1) return; // Skip headers
+  
+  var allowedStatuses = ['Selected', 'Interviewing', 'On Hold', 'Rejected'];
+  if (allowedStatuses.indexOf(val) === -1) return; // Only sync valid statuses
+  
+  if (sheetName === "Candidates" && col === 5) {
+    // Candidates status changed -> sync to Department sheet
+    var email = sheet.getRange(row, 2).getValue().toString().trim();
+    var role = sheet.getRange(row, 3).getValue().toString().trim();
+    var deptSheetName = ROLE_TO_SHEET_MAP[role] || role;
+    if (deptSheetName && email) {
+      var deptSheet = sheet.getParent().getSheetByName(deptSheetName);
+      if (deptSheet) {
+        var deptData = deptSheet.getDataRange().getValues();
+        for (var i = 1; i < deptData.length; i++) {
+          if (deptData[i][1] && deptData[i][1].toString().trim().toLowerCase() === email.toLowerCase()) {
+            var deptStatusCell = deptSheet.getRange(i + 1, 11);
+            if (deptStatusCell.getValue().toString().trim() !== val) {
+              deptStatusCell.setValue(val);
+            }
+            break;
+          }
+        }
+      }
+    }
+  } else if (sheetName !== "Candidates" && sheetName !== "ProcessedResumes" && sheetName !== "ProcessedResumesLog" && col === 11) {
+    // Department status changed -> sync to Candidates sheet
+    var email = sheet.getRange(row, 2).getValue().toString().trim();
+    if (email) {
+      var masterSheet = sheet.getParent().getSheetByName("Candidates");
+      if (masterSheet) {
+        var masterData = masterSheet.getDataRange().getValues();
+        for (var i = 1; i < masterData.length; i++) {
+          if (masterData[i][1] && masterData[i][1].toString().trim().toLowerCase() === email.toLowerCase()) {
+            var masterStatusCell = masterSheet.getRange(i + 1, 5);
+            if (masterStatusCell.getValue().toString().trim() !== val) {
+              masterStatusCell.setValue(val);
+            }
+            break;
+          }
+        }
+      }
+    }
+  }
+}
+
 // --- REST API ENDPOINTS FOR FRONTEND ---
 
 // Helper: Safely resolve the target sheet
@@ -323,9 +387,22 @@ function doPost(e) {
 // REST Endpoint Helper: Retrieve all candidate rows
 function handleGetCandidates(sheetId) {
   try {
+    const ss = sheetId ? SpreadsheetApp.openById(sheetId) : SpreadsheetApp.getActiveSpreadsheet();
     const sheet = getSheet(sheetId);
     const data = sheet.getDataRange().getValues();
     const candidates = [];
+
+    // Read resume mappings
+    var mappings = {};
+    var mappingSheet = ss.getSheetByName("ProcessedResumesLog");
+    if (mappingSheet) {
+      var mappingData = mappingSheet.getDataRange().getValues();
+      for (var m = 1; m < mappingData.length; m++) {
+        if (mappingData[m][0]) {
+          mappings[mappingData[m][0].toString().trim().toLowerCase()] = mappingData[m][1] ? mappingData[m][1].toString().trim() : "";
+        }
+      }
+    }
 
     // Map sheet rows starting from index 1 (skipping header)
     for (let i = 1; i < data.length; i++) {
@@ -347,7 +424,7 @@ function handleGetCandidates(sheetId) {
       candidate.status = row[4] ? row[4].toString().trim() : "Interviewing";
       candidate.emailStatus = row[5] ? row[5].toString().trim() : "Pending";
       candidate.source = row[6] ? row[6].toString().trim() : "Other";
-      candidate.resumeFileId = row[7] ? row[7].toString().trim() : "";
+      candidate.resumeFileId = mappings[candidate.email.toLowerCase()] || "";
 
       // Avoid pushing empty rows
       if (candidate.candidateName || candidate.email) {
@@ -648,6 +725,7 @@ function handleGetDepartmentCandidates(sheetId, sheetName) {
       return makeJsonResponse({ success: false, message: "sheetName is required" }, 400);
     }
 
+    const ss = sheetId ? SpreadsheetApp.openById(sheetId) : SpreadsheetApp.getActiveSpreadsheet();
     const sheet = getSheetByName(sheetId, sheetName);
     if (!sheet) {
       // Return empty array if sheet does not exist yet (handles dynamic addition gracefully)
@@ -662,7 +740,31 @@ function handleGetDepartmentCandidates(sheetId, sheetName) {
     const data = sheet.getDataRange().getValues();
     const candidates = [];
 
-    // Columns: Candidate Name, Email, Phone Number, Work Experience, UG, PG, College, Location, LinkedIn, GitHub, Status, Source, Resume File ID
+    // Read resume mappings
+    var mappings = {};
+    var mappingSheet = ss.getSheetByName("ProcessedResumesLog");
+    if (mappingSheet) {
+      var mappingData = mappingSheet.getDataRange().getValues();
+      for (var m = 1; m < mappingData.length; m++) {
+        if (mappingData[m][0]) {
+          mappings[mappingData[m][0].toString().trim().toLowerCase()] = mappingData[m][1] ? mappingData[m][1].toString().trim() : "";
+        }
+      }
+    }
+
+    // Read sources from Candidates master sheet
+    var emailSources = {};
+    const masterSheet = getSheet(sheetId);
+    if (masterSheet) {
+      const masterData = masterSheet.getDataRange().getValues();
+      for (let i = 1; i < masterData.length; i++) {
+        if (masterData[i][1]) {
+          emailSources[masterData[i][1].toString().trim().toLowerCase()] = masterData[i][6] ? masterData[i][6].toString().trim() : "Website";
+        }
+      }
+    }
+
+    // Columns: Candidate Name, Email, Phone Number, Work Experience, UG, PG, College, Location, LinkedIn, GitHub, Status
     for (let i = 1; i < data.length; i++) {
       const row = data[i];
       const candidate = {};
@@ -678,8 +780,8 @@ function handleGetDepartmentCandidates(sheetId, sheetName) {
       candidate.linkedin = row[8] ? row[8].toString().trim() : "";
       candidate.github = row[9] ? row[9].toString().trim() : "";
       candidate.status = row[10] ? row[10].toString().trim() : "Interviewing";
-      candidate.source = row[11] ? row[11].toString().trim() : "Website";
-      candidate.resumeFileId = row[12] ? row[12].toString().trim() : "";
+      candidate.source = emailSources[candidate.email.toLowerCase()] || "Website";
+      candidate.resumeFileId = mappings[candidate.email.toLowerCase()] || "";
 
       if (candidate.candidateName || candidate.email) {
         candidates.push(candidate);
@@ -715,11 +817,8 @@ function handleCreateCandidate(sheetId, candidate) {
       return makeJsonResponse({ success: false, message: "Candidate with email " + candidate.email + " already exists" }, 400);
     }
 
-    // Pipeline statuses
-    var allowedStatuses = ['Selected', 'Interviewing', 'On Hold', 'Rejected'];
-
-    // 1. Add to Candidates master sheet
-    // Columns: Candidate Name, Email Address, Role Applied For, Joining Date, Status, Email Status, Source, Resume File ID
+    // 1. Add to Candidates master sheet (exactly 7 columns, no resumeFileId)
+    // Columns: Candidate Name, Email Address, Role Applied For, Joining Date, Status, Email Status, Source
     masterSheet.appendRow([
       candidate.name,
       candidate.email,
@@ -727,13 +826,10 @@ function handleCreateCandidate(sheetId, candidate) {
       candidate.joiningDate || "",
       candidate.status || "Interviewing",
       candidate.emailStatus || "Pending",
-      candidate.source || "Website",
-      candidate.resumeFileId || ""
+      candidate.source || "Website"
     ]);
 
-    // No per-row data validation added to maintain Google Sheets column-wide validation formatting
-
-    // 2. Add to Department sheet
+    // 2. Add to Department sheet (exactly 11 columns, no Source or Resume File ID)
     const deptSheetName = ROLE_TO_SHEET_MAP[candidate.role] || candidate.role;
     if (deptSheetName) {
       let deptSheet = getSheetByName(sheetId, deptSheetName);
@@ -752,13 +848,11 @@ function handleCreateCandidate(sheetId, candidate) {
           "Location",
           "LinkedIn",
           "GitHub",
-          "Status",
-          "Source",
-          "Resume File ID"
+          "Status"
         ]);
       }
 
-      // Columns: Candidate Name, Email, Phone Number, Work Experience, UG, PG, College, Location, LinkedIn, GitHub, Status, Source, Resume File ID
+      // Columns: Candidate Name, Email, Phone Number, Work Experience, UG, PG, College, Location, LinkedIn, GitHub, Status
       deptSheet.appendRow([
         candidate.name,
         candidate.email,
@@ -770,12 +864,15 @@ function handleCreateCandidate(sheetId, candidate) {
         candidate.location || "",
         candidate.linkedin || "",
         candidate.github || "",
-        candidate.status || "Interviewing",
-        candidate.source || "Website",
-        candidate.resumeFileId || ""
+        candidate.status || "Interviewing"
       ]);
+    }
 
-      // No per-row data validation added to maintain Google Sheets column-wide validation formatting
+    // 3. Write resume mapping if resumeFileId is provided
+    if (candidate.resumeFileId) {
+      const ss = sheetId ? SpreadsheetApp.openById(sheetId) : SpreadsheetApp.getActiveSpreadsheet();
+      const mappingSheet = getOrCreateSheet(ss, "ProcessedResumesLog", ["Email", "Resume File ID"]);
+      mappingSheet.appendRow([candidate.email, candidate.resumeFileId]);
     }
 
     return makeJsonResponse({ success: true, message: "Candidate created and routed to " + deptSheetName }, 200);
@@ -821,6 +918,87 @@ function moveProcessedResume(file, sourceName, roleName, hrResumesFolder) {
       parents.next().removeFile(file);
     }
   }
+}
+
+// Helper: resolve or insert sheet dynamically with headers
+function getOrCreateSheet(ss, name, headers) {
+  var sheet = ss.getSheetByName(name);
+  if (!sheet) {
+    sheet = ss.insertSheet(name);
+    if (headers && headers.length > 0) {
+      sheet.appendRow(headers);
+    }
+  }
+  return sheet;
+}
+
+// Clean extracted college field, returning only the institution name
+function cleanCollegeName(line) {
+  if (!line) return "";
+  
+  // Remove tabs and dates/years (e.g. 2022 - 2026)
+  var cleanedLine = line
+    .replace(/\t/g, " ")
+    .replace(/\b\d{4}\s*(?:-|–|to)?\s*\d{4}\b/g, "")
+    .replace(/\b\d{4}\b/g, "")
+    .trim();
+    
+  var parts = cleanedLine.split(/,|\bat\b| - /i);
+  for (var i = 0; i < parts.length; i++) {
+    var p = parts[i].trim();
+    var pLower = p.toLowerCase();
+    if ((pLower.indexOf("university") !== -1 || pLower.indexOf("college") !== -1 || pLower.indexOf("institute") !== -1 || pLower.indexOf("school") !== -1) && 
+        pLower.indexOf("bachelor") === -1 && pLower.indexOf("master") === -1 && pLower.indexOf("b.tech") === -1 && pLower.indexOf("m.tech") === -1 && pLower.indexOf("b.e") === -1 && pLower.indexOf("m.e") === -1) {
+      return p.replace(/\s+/g, " ");
+    }
+  }
+  
+  var finalClean = cleanedLine
+    .replace(/(?:b\.tech|m\.tech|b\.e|m\.e|b\.sc|m\.sc|mba|b\.com|bachelor|master|degree)(?:\s+in\s+[^,\-]+)?(?:,\s*|\s+at\s+|-|\s+from\s+)?/gi, "")
+    .trim();
+  return finalClean.replace(/\s+/g, " ");
+}
+
+// Heuristic to estimate experience from text and return total months as a string
+function extractExperienceInMonths(text) {
+  var totalMonths = 0;
+  
+  // Look for years of experience: "X years", "X+ years", "X yrs", "X.Y years"
+  var yearMatches = text.match(/(\d+(?:\.\d+)?)\s*(?:\+|-)?\s*(?:years?|yrs?)\b/gi);
+  if (yearMatches) {
+    for (var i = 0; i < yearMatches.length; i++) {
+      var numMatch = yearMatches[i].match(/(\d+(?:\.\d+)?)/);
+      if (numMatch) {
+        var yrs = parseFloat(numMatch[1]);
+        if (yrs > 0 && yrs < 45) { // reasonable sanity check
+          totalMonths = Math.max(totalMonths, Math.round(yrs * 12));
+        }
+      }
+    }
+  }
+  
+  // Look for months of experience: "X months", "X month"
+  var monthMatches = text.match(/(\d+)\s*(?:months?|mths?)\b/gi);
+  if (monthMatches) {
+    for (var i = 0; i < monthMatches.length; i++) {
+      var numMatch = monthMatches[i].match(/(\d+)/);
+      if (numMatch) {
+        var mths = parseInt(numMatch[1]);
+        if (mths > 0 && mths < 500) {
+          totalMonths = Math.max(totalMonths, mths);
+        }
+      }
+    }
+  }
+  
+  // If no direct statement, look for internships
+  if (totalMonths === 0) {
+    if (text.toLowerCase().indexOf("intern") !== -1 || text.toLowerCase().indexOf("internship") !== -1) {
+      totalMonths = 3; // default estimate for internships
+    }
+  }
+  
+  return totalMonths.toString();
 }
 
 // Process new resumes under nested role subfolders
@@ -1079,7 +1257,7 @@ function parseCandidateDetails(text) {
     }
 
     if (!details.college && (lower.indexOf("college") !== -1 || lower.indexOf("university") !== -1 || lower.indexOf("institute") !== -1)) {
-      details.college = line;
+      details.college = cleanCollegeName(line);
     }
   }
 
@@ -1091,32 +1269,11 @@ function parseCandidateDetails(text) {
 
   if (!details.college) {
     var collMatch = text.match(/(?:college|university)\s*:\s*([^\n]+)/i);
-    if (collMatch) details.college = collMatch[1].trim();
+    if (collMatch) details.college = cleanCollegeName(collMatch[1]);
   }
 
-  // Work experience heuristics
-  var expLines = [];
-  for (var j = 0; j < lines.length; j++) {
-    var l = lines[j];
-    var low = l.toLowerCase();
-    if (low.indexOf("experience") !== -1 || low.indexOf("work history") !== -1 || low.indexOf("employment") !== -1) {
-      expLines.push(l);
-      if (j + 1 < lines.length) expLines.push(lines[j + 1]);
-      if (j + 2 < lines.length) expLines.push(lines[j + 2]);
-      break;
-    }
-  }
-
-  if (expLines.length > 0) {
-    details.workExperience = expLines.join("; ");
-  } else {
-    var expMatch = text.match(/\d+\+?\s*years?\s*of?\s*experience/i);
-    if (expMatch) {
-      details.workExperience = expMatch[0];
-    } else {
-      details.workExperience = "No experience listed";
-    }
-  }
+  // Work experience extraction (months)
+  details.workExperience = extractExperienceInMonths(text);
 
   return details;
 }
