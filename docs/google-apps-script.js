@@ -948,7 +948,7 @@ function extractTextFromPDF(fileId) {
 
   var resource = {
     title: "TempOCR_" + fileId,
-    mimeType: file.getBlob().getMimeType()
+    mimeType: file.getMimeType()
   };
 
   var tempFile = Drive.Files.insert(resource, blob, { ocr: true });
