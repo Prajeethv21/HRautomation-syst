@@ -958,7 +958,7 @@ function processNewResumes(sheetId) {
         } catch (err) {
           Logger.log("[ERROR] Error processing " + fileName + ": " + err.toString());
         }
-      }
+      });
     });
   });
   
