@@ -5,7 +5,7 @@ import {
 } from '../services/googleAppsScript';
 import { 
   Search, Filter, RefreshCw, Eye, Send, AlertCircle, Users, Check, 
-  Clock, XCircle, FileText, Download 
+  Clock, XCircle, FileText 
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import Button from '../components/ui/Button';
@@ -93,6 +93,9 @@ const Candidates: React.FC = () => {
   // Action status tracking (keyed by email to avoid collisions)
   const [sendingLetterEmail, setSendingLetterEmail] = useState<string | null>(null);
   const [sendingRejectionEmail, setSendingRejectionEmail] = useState<string | null>(null);
+
+  // Controlled select state for bulk update
+  const [bulkStatusValue, setBulkStatusValue] = useState("");
 
   const fetchCandidatesData = async (isSilent = false) => {
     try {
@@ -291,42 +294,6 @@ const Candidates: React.FC = () => {
     fetchCandidatesData(true);
   };
 
-  // Export Master Candidate list CSV
-  const handleExportCSV = () => {
-    if (filteredCandidates.length === 0) {
-      showToast('No candidates matching filters to export', 'info');
-      return;
-    }
-
-    const headers = ['Candidate Name', 'Email Address', 'Role Applied For', 'Joining Date', 'Status', 'Email Status', 'Source'];
-    const rows = filteredCandidates.map(c => [
-      c.candidateName,
-      c.email,
-      c.role,
-      c.joiningDate,
-      c.status,
-      c.emailStatus,
-      c.source || 'Website'
-    ]);
-
-    const csvContent = [
-      headers.join(','),
-      ...rows.map(r => r.map(val => `"${String(val || '').replace(/"/g, '""')}"`).join(','))
-    ].join('\n');
-
-    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.setAttribute('href', url);
-    link.setAttribute('download', 'Master_Candidates_Directory.csv');
-    link.style.visibility = 'hidden';
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-
-    showToast('Candidates directory exported successfully', 'success');
-  };
-
   // Scan resumes manual trigger
   const handleScanResumes = async () => {
     try {
@@ -503,14 +470,6 @@ const Candidates: React.FC = () => {
           >
             {processingResumes ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <FileText className="w-3.5 h-3.5" />}
             Scan Resumes
-          </button>
-
-          <button
-            onClick={handleExportCSV}
-            className="inline-flex items-center gap-2 px-4 py-2.5 text-xs font-bold rounded-2xl border border-brand-border bg-white text-gray-600 hover:bg-[#EDF9E8]/40 hover:text-brand transition-all active:scale-[0.98]"
-          >
-            <Download className="w-3.5 h-3.5" />
-            Export Directory
           </button>
 
           {/* Custom Dropdown Filters Popover */}
@@ -710,16 +669,18 @@ const Candidates: React.FC = () => {
           </button>
 
           <select
-            value=""
+            value={bulkStatusValue}
             onChange={(e) => {
-              if (e.target.value) {
-                handleBulkStatusUpdate(e.target.value);
+              const val = e.target.value;
+              if (val) {
+                handleBulkStatusUpdate(val);
               }
+              setBulkStatusValue("");
             }}
             className="text-xs font-bold py-2.5 pl-3.5 pr-8 rounded-2xl border border-brand-border bg-white text-gray-600 hover:bg-brand-light focus:outline-none focus:ring-2 focus:ring-[#6FAF45]/50 transition-colors cursor-pointer appearance-none bg-[url('data:image/svg+xml;charset=utf-8,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2020%2020%22%20fill%3D%22none%22%3E%3Cpath%20d%3D%22M7%209l3%203%203-3%22%20stroke%3D%22%234B5563%22%20stroke-width%3D%221.5%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%2F%3E%3C%2Fsvg%3E')] bg-[right_8px_center] bg-no-repeat bg-[length:14px_14px]"
             disabled={bulkProcessing}
           >
-            <option value="">Bulk Status Update...</option>
+            <option value="" disabled hidden>Bulk Status Update...</option>
             {['Selected', 'Interviewing', 'On Hold', 'Rejected'].map(s => (
               <option key={s} value={s}>{s}</option>
             ))}
@@ -833,7 +794,7 @@ const Candidates: React.FC = () => {
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap">
                       <select
-                        value={candidate.status ?? ""}
+                        value={SHEET_STATUS_OPTIONS.includes(candidate.status as any) ? candidate.status : "Interviewing"}
                         onChange={e => {
                           const newStatus = e.target.value;
                           console.log('Candidates.tsx onChange: Selected status =', newStatus, 'for candidate =', candidate.email);

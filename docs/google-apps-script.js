@@ -26,7 +26,7 @@ const RESUME_FOLDER_ID = "12345_PLACEHOLDER_FOLDER_ID_67890";
 const ROLE_TO_SHEET_MAP = {
   "Sustainability": "Sustainability",
   "AI Automation Engineer": "AI Automation Engineer",
-  "Web Developer": "Web Developer"
+  "Web Developer": "Web Devloper"
 };
 
 // --- ORIGINAL AUTOMATION FUNCTIONS ---
@@ -58,11 +58,79 @@ function getPendingCandidates() {
   return pendingCandidates;
 }
 
+function getLogoBlobSafely() {
+  try {
+    if (typeof LOGO_FILE_ID !== 'undefined' && LOGO_FILE_ID) {
+      // Use Advanced Drive Service and UrlFetchApp to bypass DriveApp permissions issues
+      var fileMetadata = Drive.Files.get(LOGO_FILE_ID);
+      if (fileMetadata && fileMetadata.downloadUrl) {
+        var response = UrlFetchApp.fetch(fileMetadata.downloadUrl, {
+          headers: {
+            'Authorization': 'Bearer ' + ScriptApp.getOAuthToken()
+          }
+        });
+        return response.getBlob().setName("logo.png");
+      }
+    }
+  } catch (e) {
+    Logger.log("WARNING: Failed to fetch logo image from Drive: " + e.toString());
+  }
+  return null;
+}
+
+function getOrCreateTemplateDocId() {
+  try {
+    DocumentApp.openById(TEMPLATE_ID);
+    return TEMPLATE_ID;
+  } catch (e) {
+    Logger.log("TEMPLATE_ID inaccessible. Searching for template in Drive...");
+  }
+  var query = "title contains 'Joining Letter Template' and mimeType = 'application/vnd.google-apps.document' and trashed = false";
+  var filesList = Drive.Files.list({ q: query, maxResults: 1 });
+  if (filesList.items && filesList.items.length > 0) {
+    var foundId = filesList.items[0].id;
+    Logger.log("Found existing template doc ID: " + foundId);
+    return foundId;
+  }
+  Logger.log("No template found. Creating new Joining Letter Template document...");
+  var newDoc = DocumentApp.create("Joining Letter Template");
+  var body = newDoc.getBody();
+  body.appendParagraph("DEEPWOODS GREEN INITIATIVES PVT. LTD.");
+  body.appendParagraph("Date: {{date_of_letter}}");
+  body.appendParagraph("\nDear {{candidate_name}},");
+  body.appendParagraph("\nWe are pleased to offer you the position of {{role}} starting on {{joining_date}}.");
+  body.appendParagraph("\nWelcome to the team!");
+  body.appendParagraph("\nBest regards,\nDeepwoods Green HR");
+  var newId = newDoc.getId();
+  newDoc.saveAndClose();
+  try {
+    Drive.Permissions.insert({
+      role: "reader",
+      type: "anyone"
+    }, newId);
+  } catch (e) {
+    // ignore
+  }
+  Logger.log("Created new template doc ID: " + newId);
+  return newId;
+}
+
 function generateJoiningLetter(candidate) {
   Logger.log('Apps Script generating PDF for candidate: ' + JSON.stringify(candidate));
-  const templateFile = DriveApp.getFileById(TEMPLATE_ID);
-  const copy = templateFile.makeCopy(`JoiningLetter_${candidate.candidateName}`);
-  const copyId = copy.getId();
+  
+  var activeTemplateId = TEMPLATE_ID;
+  try {
+    Drive.Files.get(activeTemplateId);
+  } catch (err) {
+    activeTemplateId = getOrCreateTemplateDocId();
+  }
+
+  // Use Advanced Drive Service to copy the template instead of DriveApp
+  var copyFile = Drive.Files.copy({
+    title: `JoiningLetter_${candidate.candidateName}`
+  }, activeTemplateId);
+  const copyId = copyFile.id;
+  
   const doc = DocumentApp.openById(copyId);
   const body = doc.getBody();
 
@@ -90,7 +158,8 @@ function generateJoiningLetter(candidate) {
 
   doc.saveAndClose();
 
-  const pdfFile = DriveApp.getFileById(copyId).getAs(MimeType.PDF);
+  // Export copy to PDF using DocumentApp's getAs instead of DriveApp
+  const pdfFile = doc.getAs(MimeType.PDF);
   const pdfName = `JoiningLetter_${candidate.candidateName.replace(/\s+/g, "")}_${candidate.role.replace(/\s+/g, "")}.pdf`;
   pdfFile.setName(pdfName);
 
@@ -104,16 +173,24 @@ function generateJoiningLetter(candidate) {
 
 function sendJoiningEmail(candidate, pdfFile) {
   Logger.log('Apps Script sending email to: ' + candidate.email);
-  const logoBlob = DriveApp.getFileById(LOGO_FILE_ID).getBlob();
+  const logoBlob = getLogoBlobSafely();
   const subject = "Offer of Joining - Deepwoods Green Initiatives Pvt. Ltd.";
 
+  var joiningDateObj = new Date();
+  if (candidate.joiningDate) {
+    var parsedDate = new Date(candidate.joiningDate);
+    if (!isNaN(parsedDate.getTime())) {
+      joiningDateObj = parsedDate;
+    }
+  }
+
   const formattedJoiningDate = Utilities.formatDate(
-    new Date(candidate.joiningDate),
+    joiningDateObj,
     Session.getScriptTimeZone(),
     "dd MMM yyyy"
   );
 
-  const htmlBody = `
+  var htmlBody = `
   <div style="font-family:'Trebuchet MS',sans-serif;font-size:14px;line-height:1.7;color:#333;max-width:680px;">
     <p>Dear <b>${candidate.candidateName}</b>,</p>
     <p>
@@ -142,19 +219,27 @@ function sendJoiningEmail(candidate, pdfFile) {
   </div>
   `;
 
+  var options = {
+    htmlBody: htmlBody,
+    attachments: [pdfFile]
+  };
+
+  if (logoBlob) {
+    options.inlineImages = {
+      deepwoodsLogo: logoBlob
+    };
+  } else {
+    htmlBody = htmlBody.replace(/<img[^>]+deepwoodsLogo[^>]*>/gi, "");
+    options.htmlBody = htmlBody;
+  }
+
   Logger.log("About to send email to: " + candidate.email);
   try {
     GmailApp.sendEmail(
       candidate.email,
       subject,
       "",
-      {
-        htmlBody: htmlBody,
-        attachments: [pdfFile],
-        inlineImages: {
-          deepwoodsLogo: logoBlob
-        }
-      }
+      options
     );
   } catch (err) {
     Logger.log("GMAIL ERROR: " + err.toString());
@@ -186,7 +271,8 @@ function sendJoiningLetters() {
 
       sheet.getRange(candidate.rowNumber, 6).setValue("Sent");
 
-      DriveApp.getFileById(result.copyId).setTrashed(true);
+      // Use Advanced Drive Service to delete the file
+      Drive.Files.remove(result.copyId);
       sentCount++;
     } catch (error) {
       Logger.log(`Error for ${candidate.candidateName}: ${error}`);
@@ -231,7 +317,7 @@ function onEdit(e) {
   if (allowedStatuses.indexOf(val) === -1) return; // Only sync valid statuses
   
   if (sheetName === "Candidates" && col === 5) {
-    // Candidates status changed -> sync to Department sheet
+    // Candidates status changed -> sync to Department sheet column K (11)
     var email = sheet.getRange(row, 2).getValue().toString().trim();
     var role = sheet.getRange(row, 3).getValue().toString().trim();
     var deptSheetName = ROLE_TO_SHEET_MAP[role] || role;
@@ -251,7 +337,7 @@ function onEdit(e) {
       }
     }
   } else if (sheetName !== "Candidates" && sheetName !== "ProcessedResumes" && sheetName !== "ProcessedResumesLog" && col === 11) {
-    // Department status changed -> sync to Candidates sheet
+    // Department status changed -> sync to Candidates sheet column E (5)
     var email = sheet.getRange(row, 2).getValue().toString().trim();
     if (email) {
       var masterSheet = sheet.getParent().getSheetByName("Candidates");
@@ -387,22 +473,9 @@ function doPost(e) {
 // REST Endpoint Helper: Retrieve all candidate rows
 function handleGetCandidates(sheetId) {
   try {
-    const ss = sheetId ? SpreadsheetApp.openById(sheetId) : SpreadsheetApp.getActiveSpreadsheet();
     const sheet = getSheet(sheetId);
     const data = sheet.getDataRange().getValues();
     const candidates = [];
-
-    // Read resume mappings
-    var mappings = {};
-    var mappingSheet = ss.getSheetByName("ProcessedResumesLog");
-    if (mappingSheet) {
-      var mappingData = mappingSheet.getDataRange().getValues();
-      for (var m = 1; m < mappingData.length; m++) {
-        if (mappingData[m][0]) {
-          mappings[mappingData[m][0].toString().trim().toLowerCase()] = mappingData[m][1] ? mappingData[m][1].toString().trim() : "";
-        }
-      }
-    }
 
     // Map sheet rows starting from index 1 (skipping header)
     for (let i = 1; i < data.length; i++) {
@@ -424,7 +497,7 @@ function handleGetCandidates(sheetId) {
       candidate.status = row[4] ? row[4].toString().trim() : "Interviewing";
       candidate.emailStatus = row[5] ? row[5].toString().trim() : "Pending";
       candidate.source = row[6] ? row[6].toString().trim() : "Other";
-      candidate.resumeFileId = mappings[candidate.email.toLowerCase()] || "";
+      candidate.resumeFileId = ""; // removed completely
 
       // Avoid pushing empty rows
       if (candidate.candidateName || candidate.email) {
@@ -484,8 +557,8 @@ function handleSendJoiningLetter(sheetId, candidateEmail) {
     // Update Email Status in column F (index 5 / Column 6) to "Sent"
     sheet.getRange(candidate.rowNumber, 6).setValue("Sent");
 
-    // Clean up temporary doc
-    DriveApp.getFileById(result.copyId).setTrashed(true);
+    // Clean up temporary doc via Advanced Drive
+    Drive.Files.remove(result.copyId);
 
     Logger.log('Apps Script sendJoiningLetter successfully completed for email: ' + candidateEmail);
 
@@ -549,11 +622,11 @@ function handleSendRejectionEmail(sheetId, candidateEmail) {
     Logger.log('Apps Script candidate found for rejection: ' + JSON.stringify(candidate));
 
     const today = Utilities.formatDate(new Date(), Session.getScriptTimeZone(), "dd MMM yyyy");
-    const logoBlob = DriveApp.getFileById(LOGO_FILE_ID).getBlob();
+    const logoBlob = getLogoBlobSafely();
 
     const subject = "Application Update \u2013 Deepwoods Green Initiatives Pvt. Ltd.";
 
-    const htmlBody = `
+    var htmlBody = `
   <div style="font-family:'Trebuchet MS',sans-serif;font-size:14px;line-height:1.7;color:#333;max-width:680px;">
     <p>Date: ${today}</p>
 
@@ -586,16 +659,24 @@ function handleSendRejectionEmail(sheetId, candidateEmail) {
   </div>
   `;
 
+    var options = {
+      htmlBody: htmlBody
+    };
+
+    if (logoBlob) {
+      options.inlineImages = { deepwoodsLogo: logoBlob };
+    } else {
+      htmlBody = htmlBody.replace(/<img[^>]+deepwoodsLogo[^>]*>/gi, "");
+      options.htmlBody = htmlBody;
+    }
+
     Logger.log("About to send email to: " + candidate.email);
     try {
       GmailApp.sendEmail(
         candidate.email,
         subject,
         "",
-        {
-          htmlBody: htmlBody,
-          inlineImages: { deepwoodsLogo: logoBlob }
-        }
+        options
       );
     } catch (err) {
       Logger.log("GMAIL ERROR: " + err.toString());
@@ -604,7 +685,7 @@ function handleSendRejectionEmail(sheetId, candidateEmail) {
 
     Logger.log('Apps Script rejection email sent successfully to: ' + candidateEmail);
 
-    // Update Email Status column F to "Sent"
+    // Update Email Status column F (index 5) to "Sent"
     sheet.getRange(candidate.rowNumber, 6).setValue("Sent");
 
     Logger.log('Apps Script updated Email Status to Sent for: ' + candidateEmail);
@@ -620,7 +701,7 @@ function handleSendRejectionEmail(sheetId, candidateEmail) {
   }
 }
 
-// REST Endpoint Helper: Update candidate status (column E in Candidates, column K in Department) by email
+// REST Endpoint Helper: Update candidate status (column E in Candidates, column J in Department) by email
 function handleUpdateCandidateStatus(sheetId, candidateEmail, newStatus) {
   Logger.log('=== handleUpdateCandidateStatus CALLED ===');
   Logger.log('candidateEmail: ' + candidateEmail);
@@ -662,16 +743,7 @@ function handleUpdateCandidateStatus(sheetId, candidateEmail, newStatus) {
 
     // Update status cell in master Candidates sheet (Column E)
     var statusCell = masterSheet.getRange(masterRowIndex, 5);
-    Logger.log('=== BEFORE UPDATE ===');
-    Logger.log('Candidate Name: ' + (masterData[masterRowIndex-1][0]));
-    Logger.log('Row Number: ' + masterRowIndex);
-    Logger.log('Cell A1: ' + statusCell.getA1Notation());
-    Logger.log('Validation before: ' + (statusCell.getDataValidation() ? statusCell.getDataValidation().getCriteriaType().toString() : 'None'));
-    
     statusCell.setValue(newStatus);
-    
-    Logger.log('=== AFTER UPDATE ===');
-    Logger.log('Validation after: ' + (statusCell.getDataValidation() ? statusCell.getDataValidation().getCriteriaType().toString() : 'None'));
     Logger.log('SUCCESS: Updated master sheet status at row ' + masterRowIndex);
 
     // 2. Update matching Department sheet
@@ -692,14 +764,7 @@ function handleUpdateCandidateStatus(sheetId, candidateEmail, newStatus) {
         if (deptRowIndex !== -1) {
           // Status column in Department sheet is at index 10 (Column K, 11th column)
           var deptStatusCell = deptSheet.getRange(deptRowIndex, 11);
-          Logger.log('=== BEFORE DEPT UPDATE ===');
-          Logger.log('Cell A1: ' + deptStatusCell.getA1Notation());
-          Logger.log('Validation before: ' + (deptStatusCell.getDataValidation() ? deptStatusCell.getDataValidation().getCriteriaType().toString() : 'None'));
-          
           deptStatusCell.setValue(newStatus);
-          
-          Logger.log('=== AFTER DEPT UPDATE ===');
-          Logger.log('Validation after: ' + (deptStatusCell.getDataValidation() ? deptStatusCell.getDataValidation().getCriteriaType().toString() : 'None'));
           Logger.log('SUCCESS: Updated department sheet status at row ' + deptRowIndex + ' in ' + deptSheetName);
         } else {
           Logger.log('WARN: Candidate not found in department sheet ' + deptSheetName);
@@ -725,10 +790,8 @@ function handleGetDepartmentCandidates(sheetId, sheetName) {
       return makeJsonResponse({ success: false, message: "sheetName is required" }, 400);
     }
 
-    const ss = sheetId ? SpreadsheetApp.openById(sheetId) : SpreadsheetApp.getActiveSpreadsheet();
     const sheet = getSheetByName(sheetId, sheetName);
     if (!sheet) {
-      // Return empty array if sheet does not exist yet (handles dynamic addition gracefully)
       return makeJsonResponse({ success: true, data: [] }, 200);
     }
 
@@ -740,26 +803,17 @@ function handleGetDepartmentCandidates(sheetId, sheetName) {
     const data = sheet.getDataRange().getValues();
     const candidates = [];
 
-    // Read resume mappings
-    var mappings = {};
-    var mappingSheet = ss.getSheetByName("ProcessedResumesLog");
-    if (mappingSheet) {
-      var mappingData = mappingSheet.getDataRange().getValues();
-      for (var m = 1; m < mappingData.length; m++) {
-        if (mappingData[m][0]) {
-          mappings[mappingData[m][0].toString().trim().toLowerCase()] = mappingData[m][1] ? mappingData[m][1].toString().trim() : "";
-        }
-      }
-    }
-
-    // Read sources from Candidates master sheet
+    // Read sources and email statuses from Candidates master sheet
     var emailSources = {};
+    var emailStatuses = {};
     const masterSheet = getSheet(sheetId);
     if (masterSheet) {
       const masterData = masterSheet.getDataRange().getValues();
       for (let i = 1; i < masterData.length; i++) {
         if (masterData[i][1]) {
-          emailSources[masterData[i][1].toString().trim().toLowerCase()] = masterData[i][6] ? masterData[i][6].toString().trim() : "Website";
+          var emailKey = masterData[i][1].toString().trim().toLowerCase();
+          emailSources[emailKey] = masterData[i][6] ? masterData[i][6].toString().trim() : "Website";
+          emailStatuses[emailKey] = masterData[i][5] ? masterData[i][5].toString().trim() : "Pending";
         }
       }
     }
@@ -776,12 +830,13 @@ function handleGetDepartmentCandidates(sheetId, sheetName) {
       candidate.ug = row[4] ? row[4].toString().trim() : "";
       candidate.pg = row[5] ? row[5].toString().trim() : "";
       candidate.college = row[6] ? row[6].toString().trim() : "";
-      candidate.location = row[7] ? row[7].toString().trim() : "";
+      candidate.location = row[7] ? row[7].toString().trim() : "N/A";
       candidate.linkedin = row[8] ? row[8].toString().trim() : "";
       candidate.github = row[9] ? row[9].toString().trim() : "";
       candidate.status = row[10] ? row[10].toString().trim() : "Interviewing";
       candidate.source = emailSources[candidate.email.toLowerCase()] || "Website";
-      candidate.resumeFileId = mappings[candidate.email.toLowerCase()] || "";
+      candidate.emailStatus = emailStatuses[candidate.email.toLowerCase()] || "Pending";
+      candidate.resumeFileId = "";
 
       if (candidate.candidateName || candidate.email) {
         candidates.push(candidate);
@@ -861,18 +916,11 @@ function handleCreateCandidate(sheetId, candidate) {
         candidate.ug || "",
         candidate.pg || "",
         candidate.college || "",
-        candidate.location || "",
+        candidate.location || "N/A",
         candidate.linkedin || "",
         candidate.github || "",
         candidate.status || "Interviewing"
       ]);
-    }
-
-    // 3. Write resume mapping if resumeFileId is provided
-    if (candidate.resumeFileId) {
-      const ss = sheetId ? SpreadsheetApp.openById(sheetId) : SpreadsheetApp.getActiveSpreadsheet();
-      const mappingSheet = getOrCreateSheet(ss, "ProcessedResumesLog", ["Email", "Resume File ID"]);
-      mappingSheet.appendRow([candidate.email, candidate.resumeFileId]);
     }
 
     return makeJsonResponse({ success: true, message: "Candidate created and routed to " + deptSheetName }, 200);
@@ -892,44 +940,95 @@ function handleProcessResumes(sheetId) {
   }
 }
 
-/// Core setup helper to get or create folders dynamically
-function getOrCreateFolder(parent, name) {
-  var folders = parent ? parent.getFoldersByName(name) : DriveApp.getFoldersByName(name);
-  if (folders.hasNext()) {
-    return folders.next();
+/// Core setup helper to get or create folders dynamically using Advanced Drive Service
+function getOrCreateFolder(parentId, name) {
+  var query = `title = '${name}' and mimeType = 'application/vnd.google-apps.folder' and trashed = false`;
+  if (parentId) {
+    query += ` and '${parentId}' in parents`;
+  }
+  var list = Drive.Files.list({ q: query, maxResults: 1 });
+  if (list.items && list.items.length > 0) {
+    return list.items[0].id;
   } else {
-    return parent ? parent.createFolder(name) : DriveApp.createFolder(name);
+    var resource = {
+      title: name,
+      mimeType: "application/vnd.google-apps.folder"
+    };
+    if (parentId) {
+      resource.parents = [{ id: parentId }];
+    }
+    var newFolder = Drive.Files.insert(resource);
+    return newFolder.id;
   }
 }
 
-// Move file utility to archive processed resumes under Processed/[Source]/[Role]/
-function moveProcessedResume(file, sourceName, roleName, hrResumesFolder) {
-  var processedFolder = getOrCreateFolder(hrResumesFolder, "Processed");
-  var sourceProcessedFolder = getOrCreateFolder(processedFolder, sourceName);
-  var roleProcessedFolder = getOrCreateFolder(sourceProcessedFolder, roleName);
+// Move file utility to archive processed resumes under Processed/[Source]/[Role]/ using Advanced Drive API
+function moveProcessedResume(fileId, sourceName, roleName, hrResumesFolderId) {
+  var processedFolderId = getOrCreateFolder(hrResumesFolderId, "Processed");
+  var sourceProcessedFolderId = getOrCreateFolder(processedFolderId, sourceName);
+  var roleProcessedFolderId = getOrCreateFolder(sourceProcessedFolderId, roleName);
   
-  try {
-    file.moveTo(roleProcessedFolder);
-  } catch (e) {
-    // Fallback for older execution environments
-    roleProcessedFolder.addFile(file);
-    var parents = file.getParents();
-    while (parents.hasNext()) {
-      parents.next().removeFile(file);
-    }
-  }
+  var file = Drive.Files.get(fileId);
+  var previousParents = file.parents.map(function(p) { return p.id; }).join(",");
+  
+  Drive.Files.update({ title: file.title }, fileId, null, {
+    addParents: roleProcessedFolderId,
+    removeParents: previousParents
+  });
 }
 
-// Helper: resolve or insert sheet dynamically with headers
-function getOrCreateSheet(ss, name, headers) {
-  var sheet = ss.getSheetByName(name);
-  if (!sheet) {
-    sheet = ss.insertSheet(name);
-    if (headers && headers.length > 0) {
-      sheet.appendRow(headers);
-    }
+function cleanUGDegree(line) {
+  if (!line) return "";
+  var cleaned = line
+    .replace(/\b\d{4}\s*(?:-|–|to)?\s*\d{4}\b/g, "")
+    .replace(/\b\d{4}\b/g, "")
+    .replace(/\b(?:gpa|cgpa|grade|score|marks?)\s*:\s*\d+(?:\.\d+)?\b/gi, "")
+    .replace(/\b\d+(?:\.\d+)?\s*(?:%|gpa|cgpa)\b/gi, "")
+    .trim();
+  var degreeMatch = cleaned.match(/\b(B\.?Tech|B\.?E|B\.?Sc|B\.?C|B\.?A|B\.?Com|B\.?B\.?A|Bachelor\s+of\s+[A-Za-z]+)\b/i);
+  if (degreeMatch) {
+    var degree = degreeMatch[1];
+    var afterPart = cleaned.substring(cleaned.indexOf(degree) + degree.length).trim();
+    afterPart = afterPart.replace(/^(?:in\s+|of\s+)/i, "").trim();
+    var parts = afterPart.split(/[,;\-—|]|\bat\b|\bfrom\b/i);
+    var major = parts[0] ? parts[0].trim() : "";
+    var normalizedDegree = degree.replace(/\./g, "");
+    if (normalizedDegree.toLowerCase() === "btech") normalizedDegree = "B.Tech";
+    else if (normalizedDegree.toLowerCase() === "be") normalizedDegree = "B.E";
+    else if (normalizedDegree.toLowerCase() === "bsc") normalizedDegree = "B.Sc";
+    else if (normalizedDegree.toLowerCase() === "ba") normalizedDegree = "B.A";
+    else if (normalizedDegree.toLowerCase() === "bcom") normalizedDegree = "B.Com";
+    else if (normalizedDegree.toLowerCase() === "bba") normalizedDegree = "B.B.A";
+    return major ? (normalizedDegree + " " + major).replace(/\s+/g, " ") : normalizedDegree;
   }
-  return sheet;
+  return cleaned;
+}
+
+function cleanPGDegree(line) {
+  if (!line) return "";
+  var cleaned = line
+    .replace(/\b\d{4}\s*(?:-|–|to)?\s*\d{4}\b/g, "")
+    .replace(/\b\d{4}\b/g, "")
+    .replace(/\b(?:gpa|cgpa|grade|score|marks?)\s*:\s*\d+(?:\.\d+)?\b/gi, "")
+    .replace(/\b\d+(?:\.\d+)?\s*(?:%|gpa|cgpa)\b/gi, "")
+    .trim();
+  var degreeMatch = cleaned.match(/\b(M\.?Tech|M\.?E|M\.?Sc|M\.?A|M\.?Com|M\.?B\.?A|Master\s+of\s+[A-Za-z]+)\b/i);
+  if (degreeMatch) {
+    var degree = degreeMatch[1];
+    var afterPart = cleaned.substring(cleaned.indexOf(degree) + degree.length).trim();
+    afterPart = afterPart.replace(/^(?:in\s+|of\s+)/i, "").trim();
+    var parts = afterPart.split(/[,;\-—|]|\bat\b|\bfrom\b/i);
+    var major = parts[0] ? parts[0].trim() : "";
+    var normalizedDegree = degree.replace(/\./g, "");
+    if (normalizedDegree.toLowerCase() === "mtech") normalizedDegree = "M.Tech";
+    else if (normalizedDegree.toLowerCase() === "me") normalizedDegree = "M.E";
+    else if (normalizedDegree.toLowerCase() === "msc") normalizedDegree = "M.Sc";
+    else if (normalizedDegree.toLowerCase() === "ma") normalizedDegree = "M.A";
+    else if (normalizedDegree.toLowerCase() === "mcom") normalizedDegree = "M.Com";
+    else if (normalizedDegree.toLowerCase() === "mba") normalizedDegree = "MBA";
+    return major ? (normalizedDegree + " " + major).replace(/\s+/g, " ") : normalizedDegree;
+  }
+  return cleaned;
 }
 
 // Clean extracted college field, returning only the institution name
@@ -937,104 +1036,174 @@ function cleanCollegeName(line) {
   if (!line) return "";
   
   // Remove tabs and dates/years (e.g. 2022 - 2026)
-  var cleanedLine = line
+  var cleaned = line
     .replace(/\t/g, " ")
     .replace(/\b\d{4}\s*(?:-|–|to)?\s*\d{4}\b/g, "")
     .replace(/\b\d{4}\b/g, "")
+    .replace(/\b(?:gpa|cgpa|grade|score|marks?)\s*:\s*\d+(?:\.\d+)?\b/gi, "")
+    .replace(/\b\d+(?:\.\d+)?\s*(?:%|gpa|cgpa)\b/gi, "")
     .trim();
     
-  var parts = cleanedLine.split(/,|\bat\b| - /i);
+  cleaned = cleaned
+    .replace(/\b(B\.?Tech|B\.?E|B\.?Sc|B\.?A|B\.?Com|B\.?B\.?A|M\.?Tech|M\.?E|M\.?Sc|M\.?A|M\.?Com|M\.?B\.?A|Bachelor|Master|Degree)\b(?:\s+in\s+[^,\-]+)?/gi, "")
+    .replace(/\b(Computer\s+Science|Engineering|Mechanical|Electrical|Civil|Electronics|Physics|Chemistry|Mathematics|Information\s+Technology|IT|AI|Data\s+Science|Business\s+Administration|Management)\b/gi, "")
+    .trim();
+    
+  cleaned = cleaned.replace(/^(?:at\s+|from\s+|in\s+)/i, "").trim();
+  
+  var parts = cleaned.split(/[,;\-—|]|\bat\b|\bfrom\b/i);
   for (var i = 0; i < parts.length; i++) {
     var p = parts[i].trim();
     var pLower = p.toLowerCase();
-    if ((pLower.indexOf("university") !== -1 || pLower.indexOf("college") !== -1 || pLower.indexOf("institute") !== -1 || pLower.indexOf("school") !== -1) && 
-        pLower.indexOf("bachelor") === -1 && pLower.indexOf("master") === -1 && pLower.indexOf("b.tech") === -1 && pLower.indexOf("m.tech") === -1 && pLower.indexOf("b.e") === -1 && pLower.indexOf("m.e") === -1) {
+    if (pLower.indexOf("university") !== -1 || pLower.indexOf("college") !== -1 || 
+        pLower.indexOf("institute") !== -1 || pLower.indexOf("school") !== -1 || 
+        pLower.indexOf("academy") !== -1 || pLower.indexOf("vidyapeeth") !== -1 ||
+        pLower.indexOf("iit") !== -1 || pLower.indexOf("nit") !== -1 || pLower.indexOf("bits") !== -1) {
       return p.replace(/\s+/g, " ");
     }
   }
   
-  var finalClean = cleanedLine
-    .replace(/(?:b\.tech|m\.tech|b\.e|m\.e|b\.sc|m\.sc|mba|b\.com|bachelor|master|degree)(?:\s+in\s+[^,\-]+)?(?:,\s*|\s+at\s+|-|\s+from\s+)?/gi, "")
-    .trim();
+  var finalClean = cleaned.split(/[,;\-—|]/)[0].trim();
   return finalClean.replace(/\s+/g, " ");
 }
 
-// Heuristic to estimate experience from text and return total months as a string
+// Calculate total experience in months (strictly numeric format string e.g. "12")
 function extractExperienceInMonths(text) {
+  if (!text) return "0";
+  
+  var lines = text.split('\n');
   var totalMonths = 0;
   
-  // Look for years of experience: "X years", "X+ years", "X yrs", "X.Y years"
-  var yearMatches = text.match(/(\d+(?:\.\d+)?)\s*(?:\+|-)?\s*(?:years?|yrs?)\b/gi);
-  if (yearMatches) {
-    for (var i = 0; i < yearMatches.length; i++) {
-      var numMatch = yearMatches[i].match(/(\d+(?:\.\d+)?)/);
-      if (numMatch) {
-        var yrs = parseFloat(numMatch[1]);
-        if (yrs > 0 && yrs < 45) { // reasonable sanity check
-          totalMonths = Math.max(totalMonths, Math.round(yrs * 12));
+  // List of month abbreviations/names
+  var monthsMap = {
+    jan: 0, january: 0,
+    feb: 1, february: 1,
+    mar: 2, march: 2,
+    apr: 3, april: 3,
+    may: 4,
+    jun: 5, june: 5,
+    jul: 6, july: 6,
+    aug: 7, august: 7,
+    sep: 8, september: 8, sept: 8,
+    oct: 9, october: 9,
+    nov: 10, november: 10,
+    dec: 11, december: 11
+  };
+
+  // Excluded keywords
+  var exclusions = /\b(intern|internship|project|academic|student|education|college|university|school|course|training|fresher|learning|freelancer?|hobby)\b/i;
+
+  // Job title indicator keywords
+  var jobIndicators = /\b(engineer|developer|analyst|lead|manager|consultant|specialist|designer|programmer|architect|associate|writer|officer|coordinator|administrator|specialist|head|director)\b/i;
+
+  for (var i = 0; i < lines.length; i++) {
+    var line = lines[i].trim();
+    if (!line) continue;
+
+    // Check if line contains any exclusion keywords
+    if (exclusions.test(line)) {
+      continue;
+    }
+
+    // Must be clearly identifiable employment duration
+    // Must contain a job indicator or be under an "Experience" section
+    var dateRangeRegex = /\b(jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|june?|july?|aug(?:ust)?|sep(?:tember)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?|\d{1,2})\b\s*[-–\/\s\(\)]*\s*\b(\d{4}|\d{2})\b\s*(?:-|–|to)\s*\b(jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|june?|july?|aug(?:ust)?|sep(?:tember)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?|\d{1,2}|present)\b\s*[-–\/\s\(\)]*\s*\b(\d{4}|\d{2})?\b/i;
+    
+    var match = line.match(dateRangeRegex);
+    if (match) {
+      // Validate if it is a job experience line (contains job title indicators)
+      var hasJobIndicator = jobIndicators.test(line);
+      if (!hasJobIndicator) {
+        // If no direct job indicator, check if previous line has one
+        var prevHasJobIndicator = false;
+        if (i > 0) {
+          prevHasJobIndicator = jobIndicators.test(lines[i-1]) && !exclusions.test(lines[i-1]);
         }
+        if (!prevHasJobIndicator) {
+          continue; // skip if not clearly associated with a job title
+        }
+      }
+
+      var startMonthStr = match[1].toLowerCase();
+      var startYearStr = match[2];
+      var endMonthStr = match[3].toLowerCase();
+      var endYearStr = match[4];
+
+      var startMonth = 0;
+      if (monthsMap[startMonthStr] !== undefined) {
+        startMonth = monthsMap[startMonthStr];
+      } else {
+        var num = parseInt(startMonthStr, 10);
+        if (num >= 1 && num <= 12) startMonth = num - 1;
+      }
+
+      var startYear = parseInt(startYearStr, 10);
+      if (startYearStr.length === 2) {
+        startYear += (startYear > 50 ? 1900 : 2000);
+      }
+
+      var endMonth = 5; // default to June
+      var endYear = 2026; // default to current year
+      var now = new Date();
+      if (endMonthStr === "present") {
+        endMonth = now.getMonth();
+        endYear = now.getFullYear();
+      } else {
+        if (monthsMap[endMonthStr] !== undefined) {
+          endMonth = monthsMap[endMonthStr];
+        } else {
+          var num = parseInt(endMonthStr, 10);
+          if (num >= 1 && num <= 12) endMonth = num - 1;
+        }
+
+        if (endYearStr) {
+          endYear = parseInt(endYearStr, 10);
+          if (endYearStr.length === 2) {
+            endYear += (endYear > 50 ? 1900 : 2000);
+          }
+        } else {
+          // E.g. June 2022 to 2024
+          var possibleYear = parseInt(endMonthStr, 10);
+          if (possibleYear >= 1900 && possibleYear <= 2100) {
+            endYear = possibleYear;
+            endMonth = 0;
+          }
+        }
+      }
+
+      var diffMonths = (endYear - startYear) * 12 + (endMonth - startMonth);
+      if (diffMonths > 0 && diffMonths < 600) {
+        totalMonths += diffMonths;
       }
     }
   }
-  
-  // Look for months of experience: "X months", "X month"
-  var monthMatches = text.match(/(\d+)\s*(?:months?|mths?)\b/gi);
-  if (monthMatches) {
-    for (var i = 0; i < monthMatches.length; i++) {
-      var numMatch = monthMatches[i].match(/(\d+)/);
-      if (numMatch) {
-        var mths = parseInt(numMatch[1]);
-        if (mths > 0 && mths < 500) {
-          totalMonths = Math.max(totalMonths, mths);
-        }
-      }
-    }
-  }
-  
-  // If no direct statement, look for internships
-  if (totalMonths === 0) {
-    if (text.toLowerCase().indexOf("intern") !== -1 || text.toLowerCase().indexOf("internship") !== -1) {
-      totalMonths = 3; // default estimate for internships
-    }
-  }
-  
+
   return totalMonths.toString();
 }
 
-// Process new resumes under nested role subfolders
+// Process new resumes under nested role subfolders using Advanced Drive API
 function processNewResumes(sheetId) {
-  var hrResumesFolder;
+  Logger.log("[SCAN] processNewResumes() started.");
   
-  // Drive Audit logging
-  try {
-    var folderSearch = DriveApp.getFoldersByName("HR Resumes");
-    var folderIndex = 1;
-    while (folderSearch.hasNext()) {
-      var f = folderSearch.next();
-      var parentNames = [];
-      var parents = f.getParents();
-      while (parents.hasNext()) {
-        parentNames.push(parents.next().getName());
-      }
-      Logger.log("[DRIVE AUDIT] Found folder named 'HR Resumes' #" + folderIndex + " - ID: " + f.getId() + " - Parent(s): " + parentNames.join(", "));
-      folderIndex++;
-    }
-  } catch (err) {
-    Logger.log("[DRIVE AUDIT] Error listing folders named 'HR Resumes': " + err.toString());
+  var hrResumesFolderId;
+  var isConfiguredFolder = false;
+  
+  if (typeof RESUME_FOLDER_ID !== "undefined" && RESUME_FOLDER_ID && RESUME_FOLDER_ID !== "12345_PLACEHOLDER_FOLDER_ID_67890") {
+    hrResumesFolderId = RESUME_FOLDER_ID;
+    isConfiguredFolder = true;
+    Logger.log("[SCAN] Using configured RESUME_FOLDER_ID: " + RESUME_FOLDER_ID);
+  } else {
+    Logger.log("[SCAN] RESUME_FOLDER_ID is set to placeholder. Resolving or creating default 'HR Resumes' folder...");
+    hrResumesFolderId = getOrCreateFolder(null, "HR Resumes");
+    Logger.log("[SCAN] Default 'HR Resumes' folder resolved to ID: " + hrResumesFolderId);
   }
 
-  if (typeof RESUME_FOLDER_ID !== "undefined" && RESUME_FOLDER_ID && RESUME_FOLDER_ID !== "12345_PLACEHOLDER_FOLDER_ID_67890") {
-    try {
-      hrResumesFolder = DriveApp.getFolderById(RESUME_FOLDER_ID);
-      Logger.log("[DRIVE AUDIT] Using RESUME_FOLDER_ID: " + RESUME_FOLDER_ID);
-    } catch (e) {
-      Logger.log("Configured RESUME_FOLDER_ID is invalid or inaccessible: " + e.toString() + ". Searching by name.");
-    }
-  }
-  
-  if (!hrResumesFolder) {
-    hrResumesFolder = getOrCreateFolder(null, "HR Resumes");
-    Logger.log("[DRIVE AUDIT] Resolved/Created 'HR Resumes' folder - ID: " + hrResumesFolder.getId());
+  // Get the exact folder path/metadata if possible
+  try {
+    var folderMetadata = Drive.Files.get(hrResumesFolderId);
+    Logger.log("[FOLDER] Root Folder ID: " + hrResumesFolderId + " | Title: " + folderMetadata.title + " | Path: /" + folderMetadata.title);
+  } catch (e) {
+    Logger.log("[ERROR] Failed to fetch root folder metadata: " + e.toString());
   }
 
   var sources = ["LinkedIn", "Other"];
@@ -1045,35 +1214,41 @@ function processNewResumes(sheetId) {
   var masterSheet = ss.getSheetByName("Candidates");
 
   sources.forEach(function(sourceName) {
-    var sourceFolder = getOrCreateFolder(hrResumesFolder, sourceName);
-    Logger.log("[DRIVE AUDIT] Source folder: " + sourceName + " - ID: " + sourceFolder.getId());
+    Logger.log("[SCAN] Checking source directory: " + sourceName);
+    var sourceFolderId = getOrCreateFolder(hrResumesFolderId, sourceName);
+    Logger.log("[FOLDER] Source Folder Name: " + sourceName + " | ID: " + sourceFolderId + " | Path: /" + (isConfiguredFolder ? "ConfiguredFolder" : "HR Resumes") + "/" + sourceName);
     
     roles.forEach(function(roleName) {
-      var roleFolder = getOrCreateFolder(sourceFolder, roleName);
-      var files = roleFolder.getFiles();
+      Logger.log("[SCAN] Checking role directory: " + roleName);
+      var roleFolderId = getOrCreateFolder(sourceFolderId, roleName);
+      Logger.log("[FOLDER] Role Folder Name: " + roleName + " | ID: " + roleFolderId + " | Path: /" + (isConfiguredFolder ? "ConfiguredFolder" : "HR Resumes") + "/" + sourceName + "/" + roleName);
       
-      var tempFiles = [];
-      while (files.hasNext()) {
-        tempFiles.push(files.next());
-      }
+      // List all files in the role folder using Advanced Drive Service
+      var filesResult = Drive.Files.list({
+        q: `'${roleFolderId}' in parents and trashed = false`
+      });
+      var tempFiles = filesResult.items || [];
       
-      Logger.log("[DRIVE AUDIT] Role folder: " + roleName + " - ID: " + roleFolder.getId() + " - Files Found: " + tempFiles.length);
+      Logger.log("[FOLDER] Discovered subfolder contents. Role folder: " + roleName + " (ID: " + roleFolderId + ") contains " + tempFiles.length + " files.");
       
       tempFiles.forEach(function(file) {
-        var fileId = file.getId();
-        var mimeType = file.getMimeType();
-        var fileName = file.getName();
-        Logger.log("[DRIVE AUDIT] File Found - Name: " + fileName + " - ID: " + fileId + " - MimeType: " + mimeType);
+        var fileId = file.id;
+        var mimeType = file.mimeType;
+        var fileName = file.title;
+        Logger.log("[FILE] Found File Name: " + fileName + " | ID: " + fileId + " | MIME Type: " + mimeType);
         
         var isPDF = mimeType === "application/pdf";
         var isDOCX = mimeType === "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
         
-        if (!isPDF && !isDOCX) {
-          Logger.log("[DRIVE AUDIT] File skipped due to unsupported file type: " + fileName);
+        var passesValidation = isPDF || isDOCX;
+        Logger.log("[FILE] File Validation check: passesValidation = " + passesValidation + " (isPDF=" + isPDF + ", isDOCX=" + isDOCX + ")");
+        
+        if (!passesValidation) {
+          Logger.log("[SKIPPED] File skipped: Name: " + fileName + " | ID: " + fileId + " | Reason: Unsupported file type. Only PDF/DOCX are allowed. MIME was: " + mimeType);
           return;
         }
         
-        Logger.log("[DETECTED] Resume detected: " + fileName + " in folder: " + sourceName + "/" + roleName);
+        Logger.log("[SCAN] Processing resume file: " + fileName + " under " + sourceName + "/" + roleName);
         
         try {
           var rawText = "";
@@ -1084,10 +1259,14 @@ function processNewResumes(sheetId) {
           }
           
           if (rawText) {
+            Logger.log("[SCAN] Text successfully extracted from " + fileName + ". Extract character length: " + rawText.length);
+            var textSnippet = rawText.substring(0, Math.min(200, rawText.length)).replace(/\n/g, " ");
+            Logger.log("[SCAN] Text snippet: " + textSnippet);
+
             var details = parseCandidateDetails(rawText);
             details.resumeFileId = fileId;
             details.source = sourceName;
-            details.role = roleName; // Explicit folder-based role assignment
+            details.role = roleName;
             details.status = "On Hold";
             details.emailStatus = "Pending";
             
@@ -1095,7 +1274,8 @@ function processNewResumes(sheetId) {
               details.name = fileName.replace(/\.[^/.]+$/, "");
             }
             
-            // Duplicate Protection
+            Logger.log("[SCAN] Parsed candidate details: " + JSON.stringify(details));
+            
             var emailToCheck = details.email ? details.email.trim().toLowerCase() : "";
             var emailExists = false;
             
@@ -1110,9 +1290,9 @@ function processNewResumes(sheetId) {
             }
             
             if (emailExists) {
-              Logger.log("[DUPLICATE SKIPPED] Candidate email " + details.email + " already exists. Skipping sheet creation.");
-              moveProcessedResume(file, sourceName, roleName, hrResumesFolder);
-              Logger.log("[FILE MOVED] Duplicate resume file " + fileName + " archived to Processed/" + sourceName + "/" + roleName);
+              Logger.log("[SKIPPED] File skipped: Name: " + fileName + " | ID: " + fileId + " | Reason: Duplicate candidate email (" + details.email + ") already exists in Candidates sheet.");
+              moveProcessedResume(fileId, sourceName, roleName, hrResumesFolderId);
+              Logger.log("[PROCESSED] Moved duplicate file " + fileName + " (ID: " + fileId + ") to Processed folder.");
               return;
             }
             
@@ -1122,24 +1302,28 @@ function processNewResumes(sheetId) {
             }
             
             // Append candidate and route to sheets
-            var createResult = handleCreateCandidate(sheetId, details);
-            Logger.log("[CANDIDATE CREATED] Successfully created candidate " + details.name + " (" + details.email + ") for role: " + details.role);
+            Logger.log("[SCAN] Creating candidate in sheets...");
+            var createRes = handleCreateCandidate(sheetId, details);
+            Logger.log("[SCAN] Sheet creation result: " + JSON.stringify(createRes));
+            Logger.log("[PROCESSED] Successfully created candidate: Name: " + details.name + " | Email: " + details.email + " | Role: " + details.role);
             
             // Move file to Processed folder
-            moveProcessedResume(file, sourceName, roleName, hrResumesFolder);
-            Logger.log("[FILE MOVED] Processed resume file " + fileName + " archived to Processed/" + sourceName + "/" + roleName);
+            Logger.log("[SCAN] Archiving file to Processed...");
+            moveProcessedResume(fileId, sourceName, roleName, hrResumesFolderId);
+            Logger.log("[PROCESSED] Moved file " + fileName + " (ID: " + fileId + ") to Processed folder.");
             
             processedCount++;
           } else {
-            Logger.log("[WARNING] Could not extract text from file: " + fileName);
+            Logger.log("[SKIPPED] File skipped: Name: " + fileName + " | ID: " + fileId + " | Reason: Extracted text is empty or conversion failed.");
           }
         } catch (err) {
-          Logger.log("[ERROR] Error processing " + fileName + ": " + err.toString());
+          Logger.log("[ERROR] Exception processing file: " + fileName + " | ID: " + fileId + " | Error: " + err.toString());
         }
       });
     });
   });
   
+  Logger.log("[SCAN] processNewResumes() complete. Total processed: " + processedCount);
   return processedCount;
 }
 
@@ -1155,7 +1339,7 @@ function extractTextFromPDF(fileId) {
 
   var resource = {
     title: "TempOCR_" + fileId,
-    mimeType: file.getMimeType()
+    mimeType: blob.getMimeType()
   };
 
   var tempFile = Drive.Files.insert(resource, blob, { ocr: true });
@@ -1245,15 +1429,11 @@ function parseCandidateDetails(text) {
     var lower = line.toLowerCase();
 
     if (!details.ug && (lower.indexOf("bachelor") !== -1 || lower.indexOf("b.sc") !== -1 || lower.indexOf("b.e") !== -1 || lower.indexOf("b.tech") !== -1 || lower.indexOf("ug:") !== -1 || lower.indexOf("undergraduate") !== -1)) {
-      details.ug = line;
+      details.ug = cleanUGDegree(line);
     }
 
     if (!details.pg && (lower.indexOf("master") !== -1 || lower.indexOf("m.sc") !== -1 || lower.indexOf("m.e") !== -1 || lower.indexOf("m.tech") !== -1 || lower.indexOf("pg:") !== -1 || lower.indexOf("postgraduate") !== -1 || lower.indexOf("mba") !== -1)) {
-      details.pg = line;
-    }
-
-    if (!details.location && (lower.indexOf("location:") !== -1 || lower.indexOf("address:") !== -1 || lower.indexOf("live in") !== -1)) {
-      details.location = line.replace(/location:/i, "").replace(/address:/i, "").trim();
+      details.pg = cleanPGDegree(line);
     }
 
     if (!details.college && (lower.indexOf("college") !== -1 || lower.indexOf("university") !== -1 || lower.indexOf("institute") !== -1)) {
@@ -1261,10 +1441,35 @@ function parseCandidateDetails(text) {
     }
   }
 
-  // Fallback pattern lookups
+  // Look for specific city names first
+  var cities = ["Bangalore", "Bengaluru", "Mysore", "Chennai", "Hyderabad"];
+  for (var c = 0; c < cities.length; c++) {
+    var cityRegex = new RegExp("\\b" + cities[c] + "\\b", "i");
+    if (cityRegex.test(text)) {
+      details.location = cities[c];
+      break;
+    }
+  }
+
+  // Fallback pattern lookups for Location/Address lines
+  if (!details.location || details.location === "N/A") {
+    for (var k = 0; k < lines.length; k++) {
+      var ln = lines[k];
+      var lnLower = ln.toLowerCase();
+      if (lnLower.indexOf("location:") !== -1 || lnLower.indexOf("address:") !== -1 || lnLower.indexOf("live in") !== -1) {
+        details.location = ln.replace(/location:/i, "").replace(/address:/i, "").replace(/live\s+in/i, "").trim();
+        break;
+      }
+    }
+  }
+
   if (!details.location) {
     var locMatch = text.match(/location\s*:\s*([^\n]+)/i);
     if (locMatch) details.location = locMatch[1].trim();
+  }
+
+  if (!details.location) {
+    details.location = "N/A";
   }
 
   if (!details.college) {
@@ -1280,57 +1485,78 @@ function parseCandidateDetails(text) {
 
 // Scheduled Trigger cleanup function: moves resume files older than 15 days from Processed folders to trash
 function cleanupOldResumes() {
-  var hrResumesFolder;
+  var hrResumesFolderId;
   
   if (typeof RESUME_FOLDER_ID !== "undefined" && RESUME_FOLDER_ID && RESUME_FOLDER_ID !== "12345_PLACEHOLDER_FOLDER_ID_67890") {
-    try {
-      hrResumesFolder = DriveApp.getFolderById(RESUME_FOLDER_ID);
-    } catch (e) {
-      Logger.log("Configured RESUME_FOLDER_ID failed to load: " + e.toString());
-    }
-  }
-  
-  if (!hrResumesFolder) {
-    var folders = DriveApp.getFoldersByName("HR Resumes");
-    if (folders.hasNext()) {
-      hrResumesFolder = folders.next();
+    hrResumesFolderId = RESUME_FOLDER_ID;
+  } else {
+    var searchResult = Drive.Files.list({
+      q: "title = 'HR Resumes' and mimeType = 'application/vnd.google-apps.folder' and trashed = false",
+      maxResults: 1
+    });
+    if (searchResult.items && searchResult.items.length > 0) {
+      hrResumesFolderId = searchResult.items[0].id;
     } else {
       Logger.log("HR Resumes folder not found. Cleanup skipped.");
       return;
     }
   }
 
-  var processedFolder = getOrCreateFolder(hrResumesFolder, "Processed");
+  var processedFolderId;
+  var processedSearch = Drive.Files.list({
+    q: `title = 'Processed' and '${hrResumesFolderId}' in parents and mimeType = 'application/vnd.google-apps.folder' and trashed = false`,
+    maxResults: 1
+  });
+  if (processedSearch.items && processedSearch.items.length > 0) {
+    processedFolderId = processedSearch.items[0].id;
+  } else {
+    Logger.log("Processed folder not found. Cleanup skipped.");
+    return;
+  }
+
   var sources = ["LinkedIn", "Other"];
   var roles = ["AI Automation Engineer", "Web Developer", "Sustainability"];
   var deletedCount = 0;
 
   sources.forEach(function(sourceName) {
-    var sourceProcessedFolder = getOrCreateFolder(processedFolder, sourceName);
-    
-    roles.forEach(function(roleName) {
-      var roleProcessedFolder = getOrCreateFolder(sourceProcessedFolder, roleName);
-      deletedCount += deleteOldFilesFromFolder(roleProcessedFolder, 15);
+    var sourceSearch = Drive.Files.list({
+      q: `title = '${sourceName}' and '${processedFolderId}' in parents and mimeType = 'application/vnd.google-apps.folder' and trashed = false`,
+      maxResults: 1
     });
+    if (sourceSearch.items && sourceSearch.items.length > 0) {
+      var sourceFolderId = sourceSearch.items[0].id;
+      roles.forEach(function(roleName) {
+        var roleSearch = Drive.Files.list({
+          q: `title = '${roleName}' and '${sourceFolderId}' in parents and mimeType = 'application/vnd.google-apps.folder' and trashed = false`,
+          maxResults: 1
+        });
+        if (roleSearch.items && roleSearch.items.length > 0) {
+          deletedCount += deleteOldFilesFromFolder(roleSearch.items[0].id, 15);
+        }
+      });
+    }
   });
 
   Logger.log("[CLEANUP] Deleted " + deletedCount + " processed resumes older than 15 days.");
 }
 
-function deleteOldFilesFromFolder(folder, ageInDays) {
-  var files = folder.getFiles();
+function deleteOldFilesFromFolder(folderId, ageInDays) {
+  var filesResult = Drive.Files.list({
+    q: `'${folderId}' in parents and trashed = false`
+  });
   var now = new Date();
   var limitMs = ageInDays * 24 * 60 * 60 * 1000;
   var deleteCount = 0;
 
-  while (files.hasNext()) {
-    var file = files.next();
-    var createdDate = file.getDateCreated();
-    if (now.getTime() - createdDate.getTime() > limitMs) {
-      Logger.log("[FILE DELETED] Processed resume file " + file.getName() + " deleted (older than " + ageInDays + " days).");
-      file.setTrashed(true); // Soft delete / move to trash
-      deleteCount++;
-    }
+  if (filesResult.items) {
+    filesResult.items.forEach(function(file) {
+      var createdDate = new Date(file.createdDate);
+      if (now.getTime() - createdDate.getTime() > limitMs) {
+        Logger.log("[FILE DELETED] Processed resume file " + file.title + " deleted (older than " + ageInDays + " days).");
+        Drive.Files.trash(file.id);
+        deleteCount++;
+      }
+    });
   }
   return deleteCount;
 }
@@ -1340,58 +1566,155 @@ function deleteOldFilesFromFolder(folder, ageInDays) {
  * Select this function in the Apps Script editor toolbar and click "Run".
  * After running, this function can be safely deleted or ignored.
  */
-function runDataMigration() {
+function runExistingDataRepair() {
   const sheetId = "1KmEOk4qn0gF8pAbBUNCcrXuw2U4P3x18eVLAUxe1vtM";
   const ss = SpreadsheetApp.openById(sheetId);
+  var allowedStatuses = ['Selected', 'Interviewing', 'On Hold', 'Rejected'];
 
-  // 1. Migrate Candidates master sheet
+  // 1. Repair Candidates Sheet
   const masterSheet = ss.getSheetByName("Candidates");
   if (masterSheet) {
+    var lastCol = masterSheet.getLastColumn();
+    if (lastCol > 7) {
+      masterSheet.getRange(1, 8, masterSheet.getLastRow(), lastCol - 7).clearContent();
+    }
     const data = masterSheet.getDataRange().getValues();
     for (let i = 1; i < data.length; i++) {
-      const status = data[i][4] ? data[i][4].toString().trim() : "";
-      let newStatus = status;
+      const row = data[i];
+      var status = row[4] ? row[4].toString().trim() : "";
       if (status === "Applied" || status === "Shortlisted" || status === "Scheduled") {
-        newStatus = "Interviewing";
+        status = "Interviewing";
       } else if (status === "Maybe") {
-        newStatus = "On Hold";
+        status = "On Hold";
       } else if (status === "Not Selected") {
-        newStatus = "Rejected";
+        status = "Rejected";
+      } else if (allowedStatuses.indexOf(status) === -1) {
+        status = "Interviewing";
       }
+      masterSheet.getRange(i + 1, 5).setValue(status);
 
-      if (newStatus !== status) {
-        masterSheet.getRange(i + 1, 5).setValue(newStatus);
-        Logger.log(`Migrated Candidate row ${i + 1}: ${status} -> ${newStatus}`);
+      var emailStatus = row[5] ? row[5].toString().trim() : "Pending";
+      if (emailStatus !== "Sent" && emailStatus !== "Pending" && emailStatus !== "Failed") {
+        emailStatus = "Pending";
       }
+      masterSheet.getRange(i + 1, 6).setValue(emailStatus);
     }
   }
 
-  // 2. Migrate Department sheets
+  // 2. Repair Department Sheets
   const sheets = ss.getSheets();
   for (let k = 0; k < sheets.length; k++) {
     const sheet = sheets[k];
     const name = sheet.getName();
     if (name !== "Candidates" && name !== "ProcessedResumes" && name !== "ProcessedResumesLog") {
-      const deptData = sheet.getDataRange().getValues();
-      if (deptData.length > 1 && deptData[0][10] === "Status") {
-        for (let j = 1; j < deptData.length; j++) {
-          const status = deptData[j][10] ? deptData[j][10].toString().trim() : "";
-          let newStatus = status;
-          if (status === "Applied" || status === "Shortlisted" || status === "Scheduled") {
-            newStatus = "Interviewing";
-          } else if (status === "Maybe") {
-            newStatus = "On Hold";
-          } else if (status === "Not Selected") {
-            newStatus = "Rejected";
-          }
+      var lastCol = sheet.getLastColumn();
+      if (lastCol > 11) {
+        sheet.getRange(1, 12, sheet.getLastRow(), lastCol - 11).clearContent();
+      }
 
-          if (newStatus !== status) {
-            sheet.getRange(j + 1, 11).setValue(newStatus);
-            Logger.log(`Migrated ${name} row ${j + 1}: ${status} -> ${newStatus}`);
+      var range = sheet.getDataRange();
+      var data = range.getValues();
+      if (data.length <= 1) continue;
+
+      sheet.getRange(2, 1, sheet.getLastRow() - 1, 11).clearContent();
+
+      sheet.getRange(1, 1, 1, 11).setValues([[
+        "Candidate Name",
+        "Email",
+        "Phone Number",
+        "Work Experience",
+        "UG",
+        "PG",
+        "College",
+        "Location",
+        "LinkedIn",
+        "GitHub",
+        "Status"
+      ]]);
+
+      for (let j = 1; j < data.length; j++) {
+        var row = data[j];
+        var cName = "";
+        var email = "";
+        var phone = "";
+        var exp = "0";
+        var ug = "";
+        var pg = "";
+        var college = "";
+        var location = "N/A";
+        var linkedin = "";
+        var github = "";
+        var status = "Interviewing";
+
+        row.forEach(function(cell) {
+          if (cell === null || cell === undefined) return;
+          var val = cell.toString().trim();
+          if (!val) return;
+
+          if (val.indexOf("@") !== -1 && val.indexOf(".") !== -1) {
+            email = val;
+          } else if (val.indexOf("linkedin.com") !== -1) {
+            linkedin = val;
+            if (linkedin && !linkedin.startsWith("http")) linkedin = "https://" + linkedin;
+          } else if (val.indexOf("github.com") !== -1) {
+            github = val;
+            if (github && !github.startsWith("http")) github = "https://" + github;
+          } else if (allowedStatuses.indexOf(val) !== -1) {
+            status = val;
+          } else if (val === "Applied" || val === "Shortlisted" || val === "Scheduled") {
+            status = "Interviewing";
+          } else if (val === "Maybe") {
+            status = "On Hold";
+          } else if (val === "Not Selected") {
+            status = "Rejected";
+          } else if (/^\+?\d[\d\s\-\(\)]+$/.test(val) && val.replace(/\D/g, "").length >= 7) {
+            phone = val;
+          } else if (/\b(b\.?tech|b\.?e|b\.?sc|b\.?c|b\.?a|b\.?com|b\.?b\.?a|bachelor)/i.test(val)) {
+            ug = cleanUGDegree(val);
+          } else if (/\b(m\.?tech|m\.?e|m\.?sc|m\.?a|m\.?com|m\.?b\.?a|master|mba)/i.test(val)) {
+            pg = cleanPGDegree(val);
+          } else if (/\b(university|college|institute|school|academy|vidyapeeth|iit|nit|bits)/i.test(val)) {
+            college = cleanCollegeName(val);
+          } else if (/\b(bangalore|bengaluru|mysore|chennai|hyderabad)\b/i.test(val)) {
+            location = val;
+          }
+        });
+
+        if (!cName && row[0]) cName = row[0].toString().trim();
+        if (!email && row[1]) email = row[1].toString().trim();
+        if (row.length > 7 && row[7]) {
+          location = row[7].toString().trim();
+        }
+
+        var rawExp = row[3] ? row[3].toString().trim() : "";
+        if (rawExp) {
+          var numMatch = rawExp.match(/\d+/);
+          if (numMatch) {
+            exp = numMatch[0];
+          } else {
+            exp = "0";
           }
         }
+
+        sheet.getRange(j + 1, 1, 1, 11).setValues([[
+          cName,
+          email,
+          phone,
+          exp,
+          ug,
+          pg,
+          college,
+          location,
+          linkedin,
+          github,
+          status
+        ]]);
       }
     }
   }
-  Logger.log("Status migration completed successfully.");
+  Logger.log("Data repair completed successfully.");
+}
+
+function runDataMigration() {
+  runExistingDataRepair();
 }

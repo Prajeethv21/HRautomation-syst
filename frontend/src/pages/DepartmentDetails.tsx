@@ -6,11 +6,13 @@ import {
 } from '../services/googleAppsScript';
 import { DEPARTMENTS } from '../config/departments';
 import { 
-  Users, CheckCircle, XCircle, Clock, Send, Download, 
-  RefreshCw, Search, ExternalLink, ChevronRight, AlertCircle, Filter, Check
+  Users, CheckCircle, XCircle, Clock, Send, 
+  RefreshCw, Search, ExternalLink, ChevronRight, AlertCircle, Filter, Check, Eye
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useToast } from '../components/ui/Toast';
+import Button from '../components/ui/Button';
+import CandidateDetailsModal from '../components/CandidateDetailsModal';
 
 const getStatusBadgeClass = (status: string) => {
   switch (status) {
@@ -27,22 +29,6 @@ const getStatusBadgeClass = (status: string) => {
   }
 };
 
-const getSourceBadgeClass = (source?: string) => {
-  switch (source) {
-    case 'LinkedIn':
-      return 'bg-sky-50 text-sky-700 border-sky-100';
-    case 'Career Page':
-      return 'bg-teal-50 text-teal-700 border-teal-100';
-    case 'Referral':
-      return 'bg-purple-50 text-purple-700 border-purple-100';
-    case 'Website':
-      return 'bg-blue-50 text-blue-700 border-blue-100';
-    case 'Manual Entry':
-      return 'bg-orange-50 text-orange-700 border-orange-100';
-    default:
-      return 'bg-gray-50 text-gray-600 border-gray-100';
-  }
-};
 
 const SHEET_STATUS_OPTIONS = [
   'Selected',
@@ -88,6 +74,72 @@ const DepartmentDetails: React.FC = () => {
   const [bulkProcessing, setBulkProcessing] = useState<boolean>(false);
   const [progressMsg, setProgressMsg] = useState<string | null>(null);
 
+  // Selected candidate details modal state
+  const [selectedCandidate, setSelectedCandidate] = useState<DepartmentCandidate | null>(null);
+  const [isDetailsOpen, setIsDetailsOpen] = useState(false);
+  
+  // Single action loading states (needed for modal actions)
+  const [sendingLetterEmail, setSendingLetterEmail] = useState<string | null>(null);
+  const [sendingRejectionEmail, setSendingRejectionEmail] = useState<string | null>(null);
+
+  // Controlled select state for bulk update
+  const [bulkStatusValue, setBulkStatusValue] = useState("");
+
+  // Render dynamic action button
+  const renderActionButton = (candidate: DepartmentCandidate) => {
+    const isSendingLetter = sendingLetterEmail === candidate.email;
+    const isSendingRejection = sendingRejectionEmail === candidate.email;
+    const emailStatus = (candidate as any).emailStatus;
+
+    if (emailStatus === 'Sent') {
+      return (
+        <Button variant="outline" size="sm" disabled className="opacity-60 cursor-not-allowed">
+          <Check className="w-3.5 h-3.5 mr-1 inline" />
+          Email Sent
+        </Button>
+      );
+    }
+
+    if (candidate.status === 'Selected') {
+      return (
+        <Button
+          variant="primary"
+          size="sm"
+          isLoading={isSendingLetter}
+          onClick={() => handleSendJoiningLetter(candidate.email, candidate.candidateName)}
+          icon={<Send className="w-3.5 h-3.5" />}
+          className="active:scale-[0.95]"
+        >
+          Send Letter
+        </Button>
+      );
+    }
+
+    if (candidate.status === 'Rejected') {
+      return (
+        <button
+          disabled={isSendingRejection}
+          onClick={() => handleSendRejectionEmail(candidate.email, candidate.candidateName)}
+          className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold rounded-xl border border-[#FFC9C9] bg-[#FFF5F5] text-[#C92A2A] hover:bg-[#FFE5E5] transition-all duration-200 active:scale-[0.95] disabled:opacity-60 disabled:cursor-not-allowed"
+        >
+          {isSendingRejection ? (
+            <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+          ) : (
+            <XCircle className="w-3.5 h-3.5" />
+          )}
+          {isSendingRejection ? 'Sending...' : 'Send Rejection'}
+        </button>
+      );
+    }
+
+    return (
+      <Button variant="outline" size="sm" disabled className="opacity-50 cursor-not-allowed">
+        <Clock className="w-3.5 h-3.5 mr-1 inline" />
+        In Pipeline
+      </Button>
+    );
+  };
+
   const fetchCandidatesData = async (isSilent = false) => {
     if (!department) return;
     try {
@@ -131,8 +183,9 @@ const DepartmentDetails: React.FC = () => {
       const nameMatch = candidate.candidateName ? candidate.candidateName.toLowerCase().includes(searchQuery.toLowerCase()) : false;
       const emailMatch = candidate.email ? candidate.email.toLowerCase().includes(searchQuery.toLowerCase()) : false;
       const collegeMatch = candidate.college ? candidate.college.toLowerCase().includes(searchQuery.toLowerCase()) : false;
-      const locationMatch = candidate.location ? candidate.location.toLowerCase().includes(searchQuery.toLowerCase()) : false;
-      const matchesSearch = nameMatch || emailMatch || collegeMatch || locationMatch;
+      const ugMatch = candidate.ug ? candidate.ug.toLowerCase().includes(searchQuery.toLowerCase()) : false;
+      const pgMatch = candidate.pg ? candidate.pg.toLowerCase().includes(searchQuery.toLowerCase()) : false;
+      const matchesSearch = nameMatch || emailMatch || collegeMatch || ugMatch || pgMatch;
 
       const matchesStatus = statusFilter === '' || candidate.status === statusFilter;
       const matchesSource = sourceFilter === '' || candidate.source === sourceFilter;
@@ -288,46 +341,57 @@ const DepartmentDetails: React.FC = () => {
     fetchCandidatesData(true);
   };
 
-  // Export CSV Report
-  const handleExportReport = () => {
-    const targets = filteredCandidates;
-    if (targets.length === 0) {
-      showToast('No candidate data matching filters to export', 'info');
-      return;
+  // Send Joining Letter handler (single candidate)
+  const handleSendJoiningLetter = async (email: string, name: string) => {
+    try {
+      setSendingLetterEmail(email);
+      showToast(`Generating and sending joining letter for ${name}...`, 'info');
+
+      // Fetch candidates list to get the row number of this candidate
+      const masterList = await fetch('/api/candidates').then(res => res.json());
+      if (!masterList.success) throw new Error(masterList.message || 'Failed to fetch candidate row');
+      const index = masterList.candidates.findIndex((c: any) => c.email === email);
+      if (index === -1) throw new Error('Candidate not found in Candidates list');
+      const rowNumber = index + 2;
+
+      const response = await sendJoiningLetter(rowNumber);
+
+      if (response.success) {
+        showToast('Joining Letter Sent Successfully', 'success');
+        await fetchCandidatesData(true);
+        window.dispatchEvent(new Event('candidate-updated'));
+      } else {
+        showToast('Failed To Send Joining Letter', 'error');
+      }
+    } catch (err: any) {
+      console.error(err);
+      showToast('Failed To Send Joining Letter', 'error');
+    } finally {
+      setSendingLetterEmail(null);
     }
+  };
 
-    const headers = ['Candidate Name', 'Email', 'Phone Number', 'Work Experience', 'UG', 'PG', 'College', 'Location', 'LinkedIn', 'GitHub', 'Status', 'Source'];
-    const rows = targets.map(c => [
-      c.candidateName,
-      c.email,
-      c.phoneNumber,
-      c.workExperience,
-      c.ug,
-      c.pg,
-      c.college,
-      c.location,
-      c.linkedin,
-      c.github,
-      c.status,
-      c.source || 'Website'
-    ]);
+  // Send Rejection Email handler (single candidate)
+  const handleSendRejectionEmail = async (email: string, name: string) => {
+    try {
+      setSendingRejectionEmail(email);
+      showToast(`Sending rejection email to ${name}...`, 'info');
 
-    const csvContent = [
-      headers.join(','),
-      ...rows.map(r => r.map(val => `"${String(val || '').replace(/"/g, '""')}"`).join(','))
-    ].join('\n');
+      const response = await sendRejectionEmail(email);
 
-    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.setAttribute('href', url);
-    link.setAttribute('download', `${department?.name || 'Department'}_Candidate_Report.csv`);
-    link.style.visibility = 'hidden';
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    
-    showToast('Report exported successfully', 'success');
+      if (response.success) {
+        showToast('Rejection Email Sent Successfully', 'success');
+        await fetchCandidatesData(true);
+        window.dispatchEvent(new Event('candidate-updated'));
+      } else {
+        showToast('Failed To Send Rejection Email', 'error');
+      }
+    } catch (err: any) {
+      console.error(err);
+      showToast('Failed To Send Rejection Email', 'error');
+    } finally {
+      setSendingRejectionEmail(null);
+    }
   };
 
   // Helper sorting headers render
@@ -417,7 +481,7 @@ const DepartmentDetails: React.FC = () => {
           <Search className="w-4 h-4 text-gray-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
           <input
             type="text"
-            placeholder="Search by name, email, college, location..."
+            placeholder="Search by name, email, college, degree..."
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             className="w-full text-sm pl-10 pr-4 py-2.5 bg-[#EDF9E8]/15 border border-brand-border rounded-2xl focus:border-[#6FAF45]/40 text-brand-text placeholder-gray-400 font-medium"
@@ -426,15 +490,6 @@ const DepartmentDetails: React.FC = () => {
 
         {/* Filters and Actions Toolbar */}
         <div className="flex flex-wrap items-center gap-3 w-full xl:w-auto justify-end">
-          <button
-            onClick={handleExportReport}
-            className="inline-flex items-center gap-2 px-4 py-2.5 text-xs font-bold rounded-2xl border border-brand-border bg-white text-gray-600 hover:bg-[#EDF9E8]/40 hover:text-brand transition-all active:scale-[0.98]"
-            disabled={bulkProcessing}
-          >
-            <Download className="w-3.5 h-3.5" />
-            Export Report
-          </button>
-
           {/* Custom Filters Popover */}
           <div className="relative" ref={filterRef}>
             <button
@@ -591,11 +646,13 @@ const DepartmentDetails: React.FC = () => {
 
           {/* Bulk status update inside department */}
           <select
-            value=""
+            value={bulkStatusValue}
             onChange={(e) => {
-              if (e.target.value) {
-                handleBulkStatusUpdate(e.target.value);
+              const val = e.target.value;
+              if (val) {
+                handleBulkStatusUpdate(val);
               }
+              setBulkStatusValue("");
             }}
             className={`text-xs font-bold py-2.5 pl-3.5 pr-8 rounded-2xl border transition-colors cursor-pointer appearance-none bg-[url('data:image/svg+xml;charset=utf-8,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2020%2020%22%20fill%3D%22none%22%3E%3Cpath%20d%3D%22M7%209l3%203%203-3%22%20stroke%3D%22%234B5563%22%20stroke-width%3D%221.5%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%2F%3E%3C%2Fsvg%3E')] bg-[right_8px_center] bg-no-repeat bg-[length:14px_14px] ${
               selectedEmails.size > 0 
@@ -604,7 +661,7 @@ const DepartmentDetails: React.FC = () => {
             }`}
             disabled={selectedEmails.size === 0 || bulkProcessing}
           >
-            <option value="">Bulk Status Update...</option>
+            <option value="" disabled hidden>Bulk Status Update...</option>
             {['Selected', 'Interviewing', 'On Hold', 'Rejected'].map(s => (
               <option key={s} value={s}>{s}</option>
             ))}
@@ -657,9 +714,9 @@ const DepartmentDetails: React.FC = () => {
                   <th className="px-6 py-4 text-xs font-bold text-gray-500 uppercase tracking-wider font-jakarta">Experience</th>
                   <th className="px-6 py-4 text-xs font-bold text-gray-500 uppercase tracking-wider font-jakarta">College</th>
                   <th className="px-6 py-4 text-xs font-bold text-gray-500 uppercase tracking-wider font-jakarta">Location</th>
-                  <th className="px-6 py-4 text-xs font-bold text-gray-500 uppercase tracking-wider font-jakarta">Source</th>
                   <th className="px-6 py-4 text-xs font-bold text-gray-500 uppercase tracking-wider font-jakarta">Links</th>
                   <th className="px-6 py-4 text-xs font-bold text-gray-500 uppercase tracking-wider font-jakarta">Status</th>
+                  <th className="px-6 py-4 text-xs font-bold text-gray-500 uppercase tracking-wider text-right font-jakarta">Actions</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-brand-border">
@@ -673,8 +730,8 @@ const DepartmentDetails: React.FC = () => {
                     <td className="px-6 py-4.5"><div className="h-3 bg-gray-200 rounded w-28" /></td>
                     <td className="px-6 py-4.5"><div className="h-3 bg-gray-200 rounded w-20" /></td>
                     <td className="px-6 py-4.5"><div className="h-3 bg-gray-200 rounded w-14" /></td>
-                    <td className="px-6 py-4.5"><div className="h-3 bg-gray-200 rounded w-14" /></td>
                     <td className="px-6 py-4.5"><div className="h-5 bg-gray-200 rounded-full w-20" /></td>
+                    <td className="px-6 py-4.5 text-right flex justify-end gap-2"><div className="h-8 bg-gray-200 rounded-lg w-14" /><div className="h-8 bg-gray-200 rounded-lg w-24" /></td>
                   </tr>
                 ))}
               </tbody>
@@ -690,7 +747,7 @@ const DepartmentDetails: React.FC = () => {
           <div className="overflow-x-auto">
             <table className="w-full text-left border-collapse">
               <thead>
-                <tr className="bg-brand-bg/40 border-b border-brand-border">
+                 <tr className="bg-brand-bg/40 border-b border-brand-border">
                   <th className="px-6 py-4.5 text-xs font-bold text-gray-500 uppercase tracking-wider font-jakarta w-10">
                     <input
                       type="checkbox"
@@ -703,11 +760,12 @@ const DepartmentDetails: React.FC = () => {
                   <th className="px-6 py-4.5 text-xs font-bold text-gray-500 uppercase tracking-wider font-jakarta">Email</th>
                   <th className="px-6 py-4.5 text-xs font-bold text-gray-500 uppercase tracking-wider font-jakarta">Phone</th>
                   <th className="px-6 py-4.5 text-left">{renderSortHeader('Experience', 'workExperience')}</th>
+                  <th className="px-6 py-4.5 text-xs font-bold text-gray-500 uppercase tracking-wider font-jakarta">UG</th>
+                  <th className="px-6 py-4.5 text-xs font-bold text-gray-500 uppercase tracking-wider font-jakarta">PG</th>
                   <th className="px-6 py-4.5 text-xs font-bold text-gray-500 uppercase tracking-wider font-jakarta">College</th>
-                  <th className="px-6 py-4.5 text-xs font-bold text-gray-500 uppercase tracking-wider font-jakarta">Location</th>
-                  <th className="px-6 py-4.5 text-left">{renderSortHeader('Source', 'source')}</th>
                   <th className="px-6 py-4.5 text-xs font-bold text-gray-500 uppercase tracking-wider font-jakarta">Links</th>
                   <th className="px-6 py-4.5 text-left">{renderSortHeader('Status', 'status')}</th>
+                  <th className="px-6 py-4.5 text-xs font-bold text-gray-500 uppercase tracking-wider text-right font-jakarta">Actions</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-brand-border">
@@ -726,28 +784,26 @@ const DepartmentDetails: React.FC = () => {
                         className="rounded border-gray-300 text-[#6FAF45] focus:ring-[#6FAF45] w-4 h-4 cursor-pointer"
                       />
                     </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm font-bold text-brand-text font-jakarta">
+                    <td className="px-6 py-4 whitespace-nowrap text-sm font-bold text-brand-text font-jakarta max-w-[140px] truncate overflow-hidden text-ellipsis whitespace-nowrap" title={candidate.candidateName}>
                       {candidate.candidateName}
                     </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-xs text-gray-500">
+                    <td className="px-6 py-4 whitespace-nowrap text-xs text-gray-500 max-w-[180px] truncate overflow-hidden text-ellipsis whitespace-nowrap" title={candidate.email}>
                       {candidate.email}
                     </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-xs text-gray-500">
+                    <td className="px-6 py-4 whitespace-nowrap text-xs text-gray-500 max-w-[120px] truncate overflow-hidden text-ellipsis whitespace-nowrap" title={candidate.phoneNumber || 'N/A'}>
                       {candidate.phoneNumber || 'N/A'}
                     </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-xs font-semibold text-gray-600">
-                      {candidate.workExperience || 'N/A'}
+                    <td className="px-6 py-4 whitespace-nowrap text-xs font-semibold text-gray-600 max-w-[80px] truncate overflow-hidden text-ellipsis whitespace-nowrap" title={candidate.workExperience ? `${candidate.workExperience} months` : 'N/A'}>
+                      {candidate.workExperience ? `${candidate.workExperience} months` : 'N/A'}
                     </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-xs text-gray-500">
+                    <td className="px-6 py-4 whitespace-nowrap text-xs text-gray-500 max-w-[120px] truncate overflow-hidden text-ellipsis whitespace-nowrap" title={candidate.ug || 'N/A'}>
+                      {candidate.ug || 'N/A'}
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-xs text-gray-500 max-w-[120px] truncate overflow-hidden text-ellipsis whitespace-nowrap" title={candidate.pg || 'N/A'}>
+                      {candidate.pg || 'N/A'}
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-xs text-gray-500 max-w-[160px] truncate overflow-hidden text-ellipsis whitespace-nowrap" title={candidate.college || 'N/A'}>
                       {candidate.college || 'N/A'}
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-xs text-gray-500">
-                      {candidate.location || 'N/A'}
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      <span className={`text-[10px] font-extrabold px-2.5 py-0.5 rounded-full uppercase border ${getSourceBadgeClass(candidate.source || 'Website')}`}>
-                        {candidate.source || 'Website'}
-                      </span>
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-xs text-gray-500">
                       <div className="flex items-center gap-2">
@@ -778,7 +834,7 @@ const DepartmentDetails: React.FC = () => {
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap">
                       <select
-                        value={candidate.status ?? ""}
+                        value={SHEET_STATUS_OPTIONS.includes(candidate.status as any) ? candidate.status : "Interviewing"}
                         onChange={e => {
                           const newStatus = e.target.value;
                           console.log('DepartmentDetails.tsx onChange: Selected status =', newStatus, 'for candidate =', candidate.email);
@@ -811,6 +867,26 @@ const DepartmentDetails: React.FC = () => {
                         ))}
                       </select>
                     </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-right text-xs">
+                      <div className="flex justify-end gap-2">
+                        {/* View Action */}
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => {
+                            setSelectedCandidate(candidate);
+                            setIsDetailsOpen(true);
+                          }}
+                          icon={<Eye className="w-3.5 h-3.5" />}
+                          className="active:scale-[0.95]"
+                        >
+                          View
+                        </Button>
+
+                        {/* Dynamic status-driven action button */}
+                        {renderActionButton(candidate)}
+                      </div>
+                    </td>
                   </tr>
                 ))}
               </tbody>
@@ -818,6 +894,25 @@ const DepartmentDetails: React.FC = () => {
           </div>
         )}
       </div>
+
+      {/* Candidate Details Modal */}
+      <CandidateDetailsModal
+        isOpen={isDetailsOpen}
+        onClose={() => setIsDetailsOpen(false)}
+        candidate={selectedCandidate}
+        onSendLetter={async (email) => {
+          setIsDetailsOpen(false);
+          if (selectedCandidate) {
+            await handleSendJoiningLetter(email, selectedCandidate.candidateName);
+          }
+        }}
+        onSendRejection={async (email) => {
+          setIsDetailsOpen(false);
+          if (selectedCandidate) {
+            await handleSendRejectionEmail(email, selectedCandidate.candidateName);
+          }
+        }}
+      />
     </div>
   );
 };

@@ -7,7 +7,7 @@ dotenv.config();
 function getCredentials() {
   const url = process.env.VITE_APPS_SCRIPT_URL;
   const sheetId = process.env.VITE_GOOGLE_SHEET_ID;
-  const templateId = process.env.VITE_TEMPLATE_ID;
+  const templateId = process.env.VITE_TEMPLATE_ID || '1T7cl_UOi8ojl5tR99gplQCJuNARs4hD5kTZw9NXT3tw';
 
   if (!url || !sheetId) {
     throw new Error('Google Apps Script URL or Google Sheet ID is not configured in backend .env file');
@@ -51,10 +51,6 @@ export async function fetchCandidateByEmail(email) {
 
 export async function sendJoiningLetterWorkflow(email) {
   const { url, sheetId, templateId } = getCredentials();
-  
-  if (!templateId) {
-    throw new Error('Google Docs Template ID is not configured in backend .env file');
-  }
 
   const payload = {
     action: 'sendJoiningLetter',
@@ -71,7 +67,7 @@ export async function sendJoiningLetterWorkflow(email) {
   try {
     const response = await axios.post(url, payload, {
       headers: { 'Content-Type': 'application/json' },
-      timeout: 20000 // 20s timeout for generation and email send
+      timeout: 60000 // 60s timeout — Drive.Files.copy + PDF generation + GmailApp can take 30-50s
     });
 
     console.log("Apps Script Response:", response.data);

@@ -20,7 +20,6 @@ export interface DepartmentCandidate {
   ug: string;
   pg: string;
   college: string;
-  location: string;
   linkedin: string;
   github: string;
   status: ATSStatus | string;

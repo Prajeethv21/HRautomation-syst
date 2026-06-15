@@ -21,7 +21,7 @@ export const DEPARTMENTS: DepartmentConfig[] = [
   {
     id: 'web-developer',
     name: 'Web Developer',
-    sheetName: 'Web Developer',
+    sheetName: 'Web Devloper',
     roles: ['Web Developer']
   }
 ];

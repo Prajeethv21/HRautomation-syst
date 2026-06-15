@@ -1,4 +1,5 @@
 import React, { useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { X } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 
@@ -8,6 +9,7 @@ interface ModalProps {
   title: string;
   children: React.ReactNode;
   size?: 'md' | 'lg' | 'xl' | '2xl' | '4xl';
+  footer?: React.ReactNode;
 }
 
 const Modal: React.FC<ModalProps> = ({
@@ -15,7 +17,8 @@ const Modal: React.FC<ModalProps> = ({
   onClose,
   title,
   children,
-  size = 'md'
+  size = 'md',
+  footer
 }) => {
   // Prevent background scrolling when modal is open
   useEffect(() => {
@@ -48,10 +51,10 @@ const Modal: React.FC<ModalProps> = ({
     '4xl': 'max-w-4xl'
   };
 
-  return (
+  const modalElement = (
     <AnimatePresence>
       {isOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 overflow-y-auto">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 overflow-hidden">
           {/* Backdrop overlay */}
           <motion.div 
             initial={{ opacity: 0 }}
@@ -68,10 +71,15 @@ const Modal: React.FC<ModalProps> = ({
             animate={{ opacity: 1, scale: 1, y: 0 }}
             exit={{ opacity: 0, scale: 0.96, y: 8 }}
             transition={{ duration: 0.25, ease: [0.16, 1, 0.3, 1] }}
-            className={`bg-white w-full rounded-2xl shadow-[0_24px_48px_rgba(0,0,0,0.12)] border border-brand-border overflow-hidden z-10 flex flex-col max-h-[90vh] ${sizeClasses[size]}`}
+            className={`bg-white rounded-2xl shadow-[0_24px_48px_rgba(0,0,0,0.12)] border border-brand-border overflow-hidden z-10 flex flex-col ${size !== 'lg' ? sizeClasses[size] : ''}`}
+            style={{ 
+              height: 'auto',
+              maxHeight: '90vh',
+              width: size === 'lg' ? 'min(1000px, 95vw)' : undefined
+            }}
           >
             {/* Header */}
-            <div className="px-6 py-5 border-b border-brand-border bg-brand-bg/10 flex items-center justify-between">
+            <div className="px-6 py-5 border-b border-brand-border bg-brand-bg/10 flex items-center justify-between shrink-0">
               <h3 className="text-base font-bold text-brand-text font-poppins">
                 {title}
               </h3>
@@ -84,15 +92,25 @@ const Modal: React.FC<ModalProps> = ({
               </button>
             </div>
 
-            {/* Content body */}
-            <div className="flex-1 overflow-y-auto p-6 text-sm">
+            {/* Content body (Candidate Details Content) */}
+            <div className="flex-1 min-h-0 overflow-y-auto p-6 text-sm">
               {children}
             </div>
+
+            {/* Footer / Actions */}
+            {footer && (
+              <div className="px-6 py-4 border-t border-brand-border bg-gray-50 flex items-center justify-end gap-3 shrink-0">
+                {footer}
+              </div>
+            )}
           </motion.div>
         </div>
       )}
     </AnimatePresence>
   );
+
+  if (typeof document === 'undefined') return null;
+  return createPortal(modalElement, document.body);
 };
 
 export default Modal;
