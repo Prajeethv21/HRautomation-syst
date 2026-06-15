@@ -24,11 +24,18 @@ interface CandidateDetailsModalProps {
   candidate: Candidate | DepartmentCandidate | null;
   onSendLetter: (email: string) => void;
   onSendRejection: (email: string) => void;
+  onSendInterview: (email: string) => void;
 }
 
 // Returns badge classes for each candidate status
 const getStatusBadgeClass = (status: string) => {
   switch (status) {
+    case 'Submitted':
+      return 'bg-gray-50 text-gray-700 border-gray-100';
+    case 'Shortlisted':
+      return 'bg-sky-50 text-sky-700 border-sky-100';
+    case 'Scheduled':
+      return 'bg-purple-50 text-purple-700 border-purple-100';
     case 'Interviewing':
       return 'bg-sky-50 text-sky-700 border-sky-100';
     case 'Selected':
@@ -64,7 +71,8 @@ const CandidateDetailsModal: React.FC<CandidateDetailsModalProps> = ({
   onClose,
   candidate,
   onSendLetter,
-  onSendRejection
+  onSendRejection,
+  onSendInterview
 }) => {
 
 
@@ -81,7 +89,12 @@ const CandidateDetailsModal: React.FC<CandidateDetailsModalProps> = ({
       .toUpperCase()
     : 'C';
 
-  const emailAlreadySent = extra.emailStatus === 'Sent';
+  const emailAlreadySent =
+    extra.emailStatus === 'Sent' ||
+    extra.emailStatus === 'Joining Letter Sent' ||
+    extra.emailStatus === 'Rejection Email Sent' ||
+    extra.emailStatus === 'Interview Scheduled' ||
+    extra.emailStatus === 'Reminder Sent';
 
   const renderActionButton = () => {
     if (emailAlreadySent) {
@@ -105,6 +118,19 @@ const CandidateDetailsModal: React.FC<CandidateDetailsModalProps> = ({
           className="px-6 active:scale-[0.98]"
         >
           Send Joining Letter
+        </Button>
+      );
+    }
+
+    if (candidate.status === 'Scheduled') {
+      return (
+        <Button
+          variant="primary"
+          onClick={() => onSendInterview(candidate.email)}
+          icon={<Send className="w-4 h-4" />}
+          className="px-6 active:scale-[0.98] bg-purple-600 hover:bg-purple-700 border-purple-600 hover:border-purple-700 text-white"
+        >
+          Send Interview Email
         </Button>
       );
     }
@@ -238,14 +264,48 @@ const CandidateDetailsModal: React.FC<CandidateDetailsModalProps> = ({
             <Send className="w-5 h-5 text-brand shrink-0 mt-0.5" />
             <div className="space-y-0.5">
               <span className="text-[10px] text-gray-400 font-semibold uppercase tracking-wider block">Letter Dispatch</span>
-              <span className={`inline-flex text-[10px] font-bold px-2.5 py-0.5 rounded-full uppercase mt-1 border ${extra.emailStatus === 'Sent'
-                  ? 'bg-green-50 text-brand border-green-100'
-                  : 'bg-amber-50 text-amber-700 border-amber-100'
+              <span className={`inline-flex text-[10px] font-bold px-2.5 py-0.5 rounded-full uppercase mt-1 border ${
+                  extra.emailStatus && extra.emailStatus.toLowerCase().includes('sent')
+                    ? 'bg-green-50 text-brand border-green-100'
+                    : extra.emailStatus === 'Interview Scheduled'
+                    ? 'bg-purple-50 text-purple-700 border-purple-100'
+                    : 'bg-amber-50 text-amber-700 border-amber-100'
                 }`}>
                 {extra.emailStatus || 'Pending'}
               </span>
             </div>
           </div>
+
+          {/* Interview Date Card */}
+          {extra.interviewDate && (
+            <div className="bg-white border border-brand-border/60 rounded-xl p-4 flex gap-3 shadow-sm hover:border-brand-light/35 transition-colors duration-250">
+              <Calendar className="w-5 h-5 text-brand shrink-0 mt-0.5" />
+              <div className="space-y-0.5">
+                <span className="text-[10px] text-gray-400 font-semibold uppercase tracking-wider block">Interview Date</span>
+                <span className="text-sm font-semibold text-brand-text">
+                  {!isNaN(new Date(extra.interviewDate).getTime()) 
+                    ? new Date(extra.interviewDate).toLocaleDateString('en-US', {
+                        weekday: 'short',
+                        year: 'numeric',
+                        month: 'short',
+                        day: 'numeric'
+                      }) 
+                    : extra.interviewDate}
+                </span>
+              </div>
+            </div>
+          )}
+
+          {/* Interview Time Card */}
+          {extra.interviewTime && (
+            <div className="bg-white border border-brand-border/60 rounded-xl p-4 flex gap-3 shadow-sm hover:border-brand-light/35 transition-colors duration-250">
+              <Clock className="w-5 h-5 text-brand shrink-0 mt-0.5" />
+              <div className="space-y-0.5">
+                <span className="text-[10px] text-gray-400 font-semibold uppercase tracking-wider block">Interview Time</span>
+                <span className="text-sm font-semibold text-brand-text">{extra.interviewTime}</span>
+              </div>
+            </div>
+          )}
 
           {/* Candidate Source Card */}
           <div className="bg-white border border-brand-border/60 rounded-xl p-4 flex gap-3 shadow-sm hover:border-brand-light/35 transition-colors duration-250">

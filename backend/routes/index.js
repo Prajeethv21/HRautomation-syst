@@ -4,6 +4,7 @@ import {
   fetchCandidateByEmail,
   sendJoiningLetterWorkflow,
   sendRejectionEmailWorkflow,
+  sendInterviewEmailWorkflow,
   updateCandidateStatus,
   fetchDepartmentCandidates,
   triggerResumeProcessing
@@ -50,6 +51,22 @@ router.post('/candidates/reject', async (req, res) => {
     res.json(result);
   } catch (error) {
     console.error("REJECT ROUTE ERROR:", error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+router.post('/candidates/interview', async (req, res) => {
+  console.log("INTERVIEW ROUTE BODY:", req.body);
+  try {
+    const { email } = req.body;
+    console.log('Backend received POST /candidates/interview with body:', JSON.stringify(req.body));
+    if (!email) {
+      return res.status(400).json({ success: false, error: 'Email parameter is required' });
+    }
+    const result = await sendInterviewEmailWorkflow(email);
+    res.json(result);
+  } catch (error) {
+    console.error("INTERVIEW ROUTE ERROR:", error);
     res.status(500).json({ success: false, error: error.message });
   }
 });

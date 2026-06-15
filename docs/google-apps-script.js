@@ -19,6 +19,8 @@ const SHEET_NAME = "Candidates";
 const TEMPLATE_ID = "1T7cl_UOi8ojl5tR99gplQCJuNARs4hD5kTZw9NXT3tw";
 const LOGO_FILE_ID = "1LimR9KAN-1FteqjlNR-h_mfAuy3kqRHR10hMplcf67iLGN1SUHoy5PYReXQoj6FIV";
 
+const IS_TESTING_MODE = true; // Set to true to schedule reminders 1 minute before, false for 1 hour before
+
 // Google Drive folder ID where resumes are uploaded
 const RESUME_FOLDER_ID = "12345_PLACEHOLDER_FOLDER_ID_67890";
 
@@ -26,7 +28,11 @@ const RESUME_FOLDER_ID = "12345_PLACEHOLDER_FOLDER_ID_67890";
 const ROLE_TO_SHEET_MAP = {
   "Sustainability": "Sustainability",
   "AI Automation Engineer": "AI Automation Engineer",
-  "Web Developer": "Web Devloper"
+  "AI/Data Engineer": "AI Automation Engineer",
+  "Web Developer": "Web Devloper",
+  "Marketing": "Marketing",
+  "Creative": "Creative",
+  "Others": "Others"
 };
 
 // --- ORIGINAL AUTOMATION FUNCTIONS ---
@@ -313,8 +319,11 @@ function onEdit(e) {
   
   if (row <= 1) return; // Skip headers
   
-  var allowedStatuses = ['Selected', 'Interviewing', 'On Hold', 'Rejected'];
+  var allowedStatuses = ['Submitted', 'Shortlisted', 'Scheduled', 'On Hold', 'Selected', 'Rejected'];
   if (allowedStatuses.indexOf(val) === -1) return; // Only sync valid statuses
+  
+  var oldStatus = e.oldValue ? e.oldValue.toString().trim() : "";
+  if (oldStatus === val) return; // No change
   
   if (sheetName === "Candidates" && col === 5) {
     // Candidates status changed -> sync to Department sheet column K (11)
@@ -336,6 +345,9 @@ function onEdit(e) {
         }
       }
     }
+    // Trigger any side effects (like auto shortlist/review emails)
+    triggerTransitionSideEffects(null, email, oldStatus, val);
+    
   } else if (sheetName !== "Candidates" && sheetName !== "ProcessedResumes" && sheetName !== "ProcessedResumesLog" && col === 11) {
     // Department status changed -> sync to Candidates sheet column E (5)
     var email = sheet.getRange(row, 2).getValue().toString().trim();
@@ -354,6 +366,8 @@ function onEdit(e) {
         }
       }
     }
+    // Trigger any side effects (like auto shortlist/review emails)
+    triggerTransitionSideEffects(null, email, oldStatus, val);
   }
 }
 
@@ -464,6 +478,10 @@ function doPost(e) {
       return handleProcessResumes(sheetId);
     }
 
+    if (action === "sendInterviewEmail") {
+      return handleSendInterviewEmail(sheetId, candidateEmail);
+    }
+
     return makeJsonResponse({ success: false, message: "Unknown POST action" }, 400);
   } catch (error) {
     return makeJsonResponse({ success: false, message: "Exception encountered: " + error.toString() }, 500);
@@ -494,10 +512,24 @@ function handleGetCandidates(sheetId) {
         candidate.joiningDate = rawDate ? rawDate.toString().trim() : "";
       }
 
-      candidate.status = row[4] ? row[4].toString().trim() : "Interviewing";
+      candidate.status = row[4] ? row[4].toString().trim() : "Submitted";
       candidate.emailStatus = row[5] ? row[5].toString().trim() : "Pending";
       candidate.source = row[6] ? row[6].toString().trim() : "Other";
       candidate.resumeFileId = ""; // removed completely
+
+      var rawInterviewDate = row[7];
+      if (rawInterviewDate instanceof Date) {
+        candidate.interviewDate = Utilities.formatDate(rawInterviewDate, Session.getScriptTimeZone(), "yyyy-MM-dd");
+      } else {
+        candidate.interviewDate = rawInterviewDate ? rawInterviewDate.toString().trim() : "";
+      }
+
+      var rawInterviewTime = row[8];
+      if (rawInterviewTime instanceof Date) {
+        candidate.interviewTime = Utilities.formatDate(rawInterviewTime, Session.getScriptTimeZone(), "hh:mm a");
+      } else {
+        candidate.interviewTime = rawInterviewTime ? rawInterviewTime.toString().trim() : "";
+      }
 
       // Avoid pushing empty rows
       if (candidate.candidateName || candidate.email) {
@@ -554,8 +586,8 @@ function handleSendJoiningLetter(sheetId, candidateEmail) {
     // Send the email with GmailApp
     sendJoiningEmail(candidate, result.pdf);
 
-    // Update Email Status in column F (index 5 / Column 6) to "Sent"
-    sheet.getRange(candidate.rowNumber, 6).setValue("Sent");
+    // Update Email Status in column F (index 5 / Column 6) to "Joining Letter Sent"
+    sheet.getRange(candidate.rowNumber, 6).setValue("Joining Letter Sent");
 
     // Clean up temporary doc via Advanced Drive
     Drive.Files.remove(result.copyId);
@@ -685,10 +717,10 @@ function handleSendRejectionEmail(sheetId, candidateEmail) {
 
     Logger.log('Apps Script rejection email sent successfully to: ' + candidateEmail);
 
-    // Update Email Status column F (index 5) to "Sent"
-    sheet.getRange(candidate.rowNumber, 6).setValue("Sent");
+    // Update Email Status column F (index 5) to "Rejection Email Sent"
+    sheet.getRange(candidate.rowNumber, 6).setValue("Rejection Email Sent");
 
-    Logger.log('Apps Script updated Email Status to Sent for: ' + candidateEmail);
+    Logger.log('Apps Script updated Email Status to Rejection Email Sent for: ' + candidateEmail);
 
     return makeJsonResponse({
       success: true,
@@ -716,7 +748,7 @@ function handleUpdateCandidateStatus(sheetId, candidateEmail, newStatus) {
       return makeJsonResponse({ success: false, message: "status is required" }, 400);
     }
 
-    var allowedStatuses = ['Selected', 'Interviewing', 'On Hold', 'Rejected'];
+    var allowedStatuses = ['Submitted', 'Shortlisted', 'Scheduled', 'On Hold', 'Selected', 'Rejected'];
     if (allowedStatuses.indexOf(newStatus) === -1) {
       Logger.log('INVALID status value: ' + newStatus);
       return makeJsonResponse({ success: false, message: "Invalid status value. Allowed: " + allowedStatuses.join(', ') }, 400);
@@ -740,6 +772,9 @@ function handleUpdateCandidateStatus(sheetId, candidateEmail, newStatus) {
       Logger.log('FAILED: candidate not found for email=' + candidateEmail);
       return makeJsonResponse({ success: false, message: "Candidate not found: " + candidateEmail }, 404);
     }
+
+    // Read old status
+    var oldStatus = masterSheet.getRange(masterRowIndex, 5).getValue().toString().trim();
 
     // Update status cell in master Candidates sheet (Column E)
     var statusCell = masterSheet.getRange(masterRowIndex, 5);
@@ -771,6 +806,9 @@ function handleUpdateCandidateStatus(sheetId, candidateEmail, newStatus) {
         }
       }
     }
+
+    // Trigger any side effects (like auto shortlist/review emails)
+    triggerTransitionSideEffects(sheetId, candidateEmail, oldStatus, newStatus);
 
     return makeJsonResponse({
       success: true,
@@ -872,16 +910,18 @@ function handleCreateCandidate(sheetId, candidate) {
       return makeJsonResponse({ success: false, message: "Candidate with email " + candidate.email + " already exists" }, 400);
     }
 
-    // 1. Add to Candidates master sheet (exactly 7 columns, no resumeFileId)
-    // Columns: Candidate Name, Email Address, Role Applied For, Joining Date, Status, Email Status, Source
+    // 1. Add to Candidates master sheet (exactly 9 columns)
+    // Columns: Candidate Name, Email Address, Role Applied For, Joining Date, Status, Email Status, Source, Interview Date, Interview Time
     masterSheet.appendRow([
       candidate.name,
       candidate.email,
       candidate.role || "",
       candidate.joiningDate || "",
-      candidate.status || "Interviewing",
+      candidate.status || "Submitted",
       candidate.emailStatus || "Pending",
-      candidate.source || "Website"
+      candidate.source || "Website",
+      candidate.interviewDate || "",
+      candidate.interviewTime || ""
     ]);
 
     // 2. Add to Department sheet (exactly 11 columns, no Source or Resume File ID)
@@ -919,7 +959,7 @@ function handleCreateCandidate(sheetId, candidate) {
         candidate.location || "N/A",
         candidate.linkedin || "",
         candidate.github || "",
-        candidate.status || "Interviewing"
+        candidate.status || "Submitted"
       ]);
     }
 
@@ -1207,7 +1247,15 @@ function processNewResumes(sheetId) {
   }
 
   var sources = ["LinkedIn", "Other"];
-  var roles = ["AI Automation Engineer", "Web Developer", "Sustainability"];
+  var roles = [
+    "AI Automation Engineer",
+    "AI/Data Engineer",
+    "Web Developer",
+    "Sustainability",
+    "Marketing",
+    "Creative",
+    "Others"
+  ];
   var processedCount = 0;
   
   var ss = sheetId ? SpreadsheetApp.openById(sheetId) : SpreadsheetApp.getActiveSpreadsheet();
@@ -1267,7 +1315,7 @@ function processNewResumes(sheetId) {
             details.resumeFileId = fileId;
             details.source = sourceName;
             details.role = roleName;
-            details.status = "On Hold";
+            details.status = "Submitted";
             details.emailStatus = "Pending";
             
             if (!details.name) {
@@ -1306,6 +1354,9 @@ function processNewResumes(sheetId) {
             var createRes = handleCreateCandidate(sheetId, details);
             Logger.log("[SCAN] Sheet creation result: " + JSON.stringify(createRes));
             Logger.log("[PROCESSED] Successfully created candidate: Name: " + details.name + " | Email: " + details.email + " | Role: " + details.role);
+            
+            // Log file ID mapping
+            logProcessedResume(sheetId, details.email, fileId);
             
             // Move file to Processed folder
             Logger.log("[SCAN] Archiving file to Processed...");
@@ -1483,82 +1534,511 @@ function parseCandidateDetails(text) {
   return details;
 }
 
-// Scheduled Trigger cleanup function: moves resume files older than 15 days from Processed folders to trash
-function cleanupOldResumes() {
-  var hrResumesFolderId;
+// Hidden log sheet name
+const LOG_SHEET_NAME = "ProcessedResumesLog";
+
+function logProcessedResume(sheetId, email, fileId) {
+  try {
+    var ss = sheetId ? SpreadsheetApp.openById(sheetId) : SpreadsheetApp.getActiveSpreadsheet();
+    var logSheet = ss.getSheetByName(LOG_SHEET_NAME);
+    if (!logSheet) {
+      logSheet = ss.insertSheet(LOG_SHEET_NAME);
+      logSheet.appendRow(["Email", "File ID", "Rejection Date"]);
+      logSheet.hideSheet();
+    }
+    
+    // Check if mapping already exists to prevent duplicate entries
+    var data = logSheet.getDataRange().getValues();
+    for (var i = 1; i < data.length; i++) {
+      if (data[i][0] && data[i][0].toString().trim().toLowerCase() === email.trim().toLowerCase()) {
+        // If entry exists, just update File ID
+        logSheet.getRange(i + 1, 2).setValue(fileId);
+        return;
+      }
+    }
+    
+    logSheet.appendRow([email, fileId, ""]);
+  } catch (e) {
+    Logger.log("Error logging processed resume mapping: " + e.toString());
+  }
+}
+
+function recordRejectionDate(sheetId, email) {
+  try {
+    var ss = sheetId ? SpreadsheetApp.openById(sheetId) : SpreadsheetApp.getActiveSpreadsheet();
+    var logSheet = ss.getSheetByName(LOG_SHEET_NAME);
+    if (!logSheet) return;
+    var data = logSheet.getDataRange().getValues();
+    for (var i = 1; i < data.length; i++) {
+      if (data[i][0] && data[i][0].toString().trim().toLowerCase() === email.trim().toLowerCase()) {
+        // Only set rejection date if not already set
+        if (!data[i][2]) {
+          logSheet.getRange(i + 1, 3).setValue(new Date());
+        }
+        break;
+      }
+    }
+  } catch (e) {
+    Logger.log("Error recording rejection date: " + e.toString());
+  }
+}
+
+function clearRejectionDate(sheetId, email) {
+  try {
+    var ss = sheetId ? SpreadsheetApp.openById(sheetId) : SpreadsheetApp.getActiveSpreadsheet();
+    var logSheet = ss.getSheetByName(LOG_SHEET_NAME);
+    if (!logSheet) return;
+    var data = logSheet.getDataRange().getValues();
+    for (var i = 1; i < data.length; i++) {
+      if (data[i][0] && data[i][0].toString().trim().toLowerCase() === email.trim().toLowerCase()) {
+        logSheet.getRange(i + 1, 3).setValue("");
+        break;
+      }
+    }
+  } catch (e) {
+    Logger.log("Error clearing rejection date: " + e.toString());
+  }
+}
+
+function sendShortlistEmail(candidateName, candidateEmail, role) {
+  const logoBlob = getLogoBlobSafely();
+  const subject = "Application Shortlisted - Deepwoods Green Initiatives Pvt. Ltd.";
   
-  if (typeof RESUME_FOLDER_ID !== "undefined" && RESUME_FOLDER_ID && RESUME_FOLDER_ID !== "12345_PLACEHOLDER_FOLDER_ID_67890") {
-    hrResumesFolderId = RESUME_FOLDER_ID;
+  var htmlBody = `
+  <div style="font-family:'Trebuchet MS',sans-serif;font-size:14px;line-height:1.7;color:#333;max-width:680px;">
+    <p>Dear <b>${candidateName}</b>,</p>
+    <p>
+      We are pleased to inform you that your application for the position of <b>${role}</b> has been shortlisted.
+    </p>
+    <p>
+      Our HR team will reach out to you shortly to schedule the next rounds of interviews.
+    </p>
+    <p>
+      Best regards,<br>
+      <b>Deepwoods Green Initiatives Pvt. Ltd.</b>
+    </p>
+    <img src="cid:deepwoodsLogo" width="300">
+    <hr>
+    <p style="font-size:12px;color:#666;">
+      we@deepwoodsgreen.com | +91 98413 39293
+    </p>
+  </div>
+  `;
+
+  var options = {
+    htmlBody: htmlBody
+  };
+
+  if (logoBlob) {
+    options.inlineImages = {
+      deepwoodsLogo: logoBlob
+    };
   } else {
-    var searchResult = Drive.Files.list({
-      q: "title = 'HR Resumes' and mimeType = 'application/vnd.google-apps.folder' and trashed = false",
-      maxResults: 1
-    });
-    if (searchResult.items && searchResult.items.length > 0) {
-      hrResumesFolderId = searchResult.items[0].id;
-    } else {
-      Logger.log("HR Resumes folder not found. Cleanup skipped.");
-      return;
+    htmlBody = htmlBody.replace(/<img[^>]+deepwoodsLogo[^>]*>/gi, "");
+    options.htmlBody = htmlBody;
+  }
+
+  try {
+    GmailApp.sendEmail(candidateEmail, subject, "", options);
+    Logger.log("Shortlist email sent to: " + candidateEmail);
+  } catch (err) {
+    Logger.log("Error sending shortlist email: " + err.toString());
+  }
+}
+
+function sendOnHoldEmail(candidateName, candidateEmail, role) {
+  const logoBlob = getLogoBlobSafely();
+  const subject = "Application Update - Deepwoods Green Initiatives Pvt. Ltd.";
+  
+  var htmlBody = `
+  <div style="font-family:'Trebuchet MS',sans-serif;font-size:14px;line-height:1.7;color:#333;max-width:680px;">
+    <p>Dear <b>${candidateName}</b>,</p>
+    <p>
+      Thank you for your patience during our recruitment process for the position of <b>${role}</b>.
+    </p>
+    <p>
+      We wanted to let you know that your application is currently under review. We are evaluating all profiles carefully and will update you as soon as there is a decision.
+    </p>
+    <p>
+      Best regards,<br>
+      <b>Deepwoods Green Initiatives Pvt. Ltd.</b>
+    </p>
+    <img src="cid:deepwoodsLogo" width="300">
+    <hr>
+    <p style="font-size:12px;color:#666;">
+      we@deepwoodsgreen.com | +91 98413 39293
+    </p>
+  </div>
+  `;
+
+  var options = {
+    htmlBody: htmlBody
+  };
+
+  if (logoBlob) {
+    options.inlineImages = {
+      deepwoodsLogo: logoBlob
+    };
+  } else {
+    htmlBody = htmlBody.replace(/<img[^>]+deepwoodsLogo[^>]*>/gi, "");
+    options.htmlBody = htmlBody;
+  }
+
+  try {
+    GmailApp.sendEmail(candidateEmail, subject, "", options);
+    Logger.log("On Hold email sent to: " + candidateEmail);
+  } catch (err) {
+    Logger.log("Error sending On Hold email: " + err.toString());
+  }
+}
+
+function triggerTransitionSideEffects(sheetId, candidateEmail, oldStatus, newStatus) {
+  Logger.log("triggerTransitionSideEffects from old=" + oldStatus + " to new=" + newStatus + " for email=" + candidateEmail);
+  
+  // Update rejected candidates log rejection timestamp
+  if (newStatus === "Rejected") {
+    recordRejectionDate(sheetId, candidateEmail);
+  } else {
+    clearRejectionDate(sheetId, candidateEmail);
+  }
+
+  const ss = sheetId ? SpreadsheetApp.openById(sheetId) : SpreadsheetApp.getActiveSpreadsheet();
+  const masterSheet = ss.getSheetByName("Candidates");
+  if (!masterSheet) return;
+  const masterData = masterSheet.getDataRange().getValues();
+  let masterRowIndex = -1;
+  let candidateName = "";
+  let role = "";
+  
+  for (let i = 1; i < masterData.length; i++) {
+    if (masterData[i][1] && masterData[i][1].toString().trim().toLowerCase() === candidateEmail.trim().toLowerCase()) {
+      masterRowIndex = i + 1;
+      candidateName = masterData[i][0].toString().trim();
+      role = masterData[i][2].toString().trim();
+      break;
     }
   }
 
-  var processedFolderId;
-  var processedSearch = Drive.Files.list({
-    q: `title = 'Processed' and '${hrResumesFolderId}' in parents and mimeType = 'application/vnd.google-apps.folder' and trashed = false`,
-    maxResults: 1
-  });
-  if (processedSearch.items && processedSearch.items.length > 0) {
-    processedFolderId = processedSearch.items[0].id;
+  if (masterRowIndex === -1) return;
+
+  if (newStatus === "Shortlisted" && oldStatus === "Submitted") {
+    sendShortlistEmail(candidateName, candidateEmail, role);
+    masterSheet.getRange(masterRowIndex, 6).setValue("Shortlisted Email Sent");
+  } else if (newStatus === "On Hold") {
+    sendOnHoldEmail(candidateName, candidateEmail, role);
+    masterSheet.getRange(masterRowIndex, 6).setValue("On Hold Email Sent");
+  }
+}
+
+function handleSendInterviewEmail(sheetId, candidateEmail) {
+  try {
+    if (!candidateEmail) {
+      return makeJsonResponse({ success: false, message: "candidateEmail is required" }, 400);
+    }
+
+    const masterSheet = getSheetByName(sheetId, "Candidates");
+    const masterData = masterSheet.getDataRange().getValues();
+    let masterRowIndex = -1;
+    let candidate = null;
+
+    for (let i = 1; i < masterData.length; i++) {
+      if (masterData[i][1] && masterData[i][1].toString().trim().toLowerCase() === candidateEmail.trim().toLowerCase()) {
+        masterRowIndex = i + 1;
+        candidate = {
+          rowNumber: masterRowIndex,
+          candidateName: masterData[i][0].toString().trim(),
+          email: masterData[i][1].toString().trim(),
+          role: masterData[i][2].toString().trim(),
+          interviewDate: masterData[i][7], // Column H (8th)
+          interviewTime: masterData[i][8]  // Column I (9th)
+        };
+        break;
+      }
+    }
+
+    if (!candidate || masterRowIndex === -1) {
+      return makeJsonResponse({ success: false, message: "Candidate not found: " + candidateEmail }, 404);
+    }
+
+    if (!candidate.interviewDate || !candidate.interviewTime) {
+      return makeJsonResponse({ success: false, message: "Please fill Interview Date and Interview Time in the Candidates sheet first." }, 400);
+    }
+
+    var formattedDate = "";
+    if (candidate.interviewDate instanceof Date) {
+      formattedDate = Utilities.formatDate(candidate.interviewDate, Session.getScriptTimeZone(), "dd MMM yyyy");
+    } else {
+      formattedDate = candidate.interviewDate.toString().trim();
+    }
+
+    var formattedTime = "";
+    if (candidate.interviewTime instanceof Date) {
+      formattedTime = Utilities.formatDate(candidate.interviewTime, Session.getScriptTimeZone(), "hh:mm a");
+    } else {
+      formattedTime = candidate.interviewTime.toString().trim();
+    }
+
+    // Send the interview invitation email
+    const logoBlob = getLogoBlobSafely();
+    const subject = "Interview Invitation - Deepwoods Green Initiatives Pvt. Ltd.";
+    
+    var htmlBody = `
+    <div style="font-family:'Trebuchet MS',sans-serif;font-size:14px;line-height:1.7;color:#333;max-width:680px;">
+      <p>Dear <b>${candidate.candidateName}</b>,</p>
+      <p>
+        Thank you for your application. We would like to invite you for an interview for the position of <b>${candidate.role}</b>.
+      </p>
+      <p><b>Interview details:</b></p>
+      <ul>
+        <li><b>Date:</b> ${formattedDate}</li>
+        <li><b>Time:</b> ${formattedTime}</li>
+      </ul>
+      <p>
+        Please ensure you join on time. We look forward to speaking with you.
+      </p>
+      <p>
+        Best regards,<br>
+        <b>Deepwoods Green Initiatives Pvt. Ltd.</b>
+      </p>
+      <img src="cid:deepwoodsLogo" width="300">
+      <hr>
+      <p style="font-size:12px;color:#666;">
+        we@deepwoodsgreen.com | +91 98413 39293
+      </p>
+    </div>
+    `;
+
+    var options = { htmlBody: htmlBody };
+    if (logoBlob) {
+      options.inlineImages = { deepwoodsLogo: logoBlob };
+    } else {
+      htmlBody = htmlBody.replace(/<img[^>]+deepwoodsLogo[^>]*>/gi, "");
+      options.htmlBody = htmlBody;
+    }
+
+    GmailApp.sendEmail(candidateEmail, subject, "", options);
+    Logger.log("Interview invitation email sent successfully to: " + candidateEmail);
+
+    // Update Email Status to "Interview Scheduled"
+    masterSheet.getRange(masterRowIndex, 6).setValue("Interview Scheduled");
+
+    // Schedule reminder trigger
+    try {
+      var interviewDateTime = parseInterviewDateTime(candidate.interviewDate, candidate.interviewTime);
+      var offsetMs = IS_TESTING_MODE ? 60 * 1000 : 60 * 60 * 1000; // 1 min for testing, 1 hour for production
+      var reminderTime = new Date(interviewDateTime.getTime() - offsetMs);
+      var now = new Date();
+      if (reminderTime.getTime() <= now.getTime()) {
+        reminderTime = new Date(now.getTime() + 5 * 1000); // 5 sec in future if offset falls in past
+      }
+
+      var trigger = ScriptApp.newTrigger('sendInterviewReminderEmail')
+        .timeBased()
+        .at(reminderTime)
+        .create();
+      
+      var triggerId = trigger.getUniqueId();
+      PropertiesService.getScriptProperties().setProperty(triggerId, candidateEmail);
+      Logger.log("Scheduled interview reminder trigger: ID=" + triggerId + ", Time=" + reminderTime.toString());
+    } catch (triggerErr) {
+      Logger.log("Failed to schedule reminder trigger: " + triggerErr.toString());
+    }
+
+    return makeJsonResponse({
+      success: true,
+      message: "Interview invitation successfully emailed to " + candidateEmail + " and reminder scheduled."
+    }, 200);
+
+  } catch (error) {
+    Logger.log("handleSendInterviewEmail failed: " + error.toString());
+    return makeJsonResponse({ success: false, message: "Interview email trigger failed: " + error.toString() }, 500);
+  }
+}
+
+function parseInterviewDateTime(dateVal, timeVal) {
+  var dateObj;
+  if (dateVal instanceof Date) {
+    dateObj = new Date(dateVal.getTime());
   } else {
-    Logger.log("Processed folder not found. Cleanup skipped.");
+    dateObj = new Date(dateVal.toString().trim());
+  }
+  
+  if (isNaN(dateObj.getTime())) {
+    throw new Error("Invalid Interview Date format.");
+  }
+  
+  var timeStr = "";
+  if (timeVal instanceof Date) {
+    timeStr = Utilities.formatDate(timeVal, Session.getScriptTimeZone(), "HH:mm");
+  } else {
+    timeStr = timeVal.toString().trim();
+  }
+  
+  var hours = 0;
+  var minutes = 0;
+  var timeMatch = timeStr.match(/(\d{1,2}):(\d{2})\s*(AM|PM)?/i);
+  if (timeMatch) {
+    hours = parseInt(timeMatch[1], 10);
+    minutes = parseInt(timeMatch[2], 10);
+    var ampm = timeMatch[3];
+    if (ampm) {
+      ampm = ampm.toUpperCase();
+      if (ampm === "PM" && hours < 12) hours += 12;
+      if (ampm === "AM" && hours === 12) hours = 0;
+    }
+  } else {
+    var parts = timeStr.split(":");
+    if (parts.length >= 2) {
+      hours = parseInt(parts[0], 10);
+      minutes = parseInt(parts[1], 10);
+    }
+  }
+  
+  dateObj.setHours(hours);
+  dateObj.setMinutes(minutes);
+  dateObj.setSeconds(0);
+  dateObj.setMilliseconds(0);
+  
+  return dateObj;
+}
+
+function deleteTriggerById(triggerId) {
+  var triggers = ScriptApp.getProjectTriggers();
+  for (var i = 0; i < triggers.length; i++) {
+    if (triggers[i].getUniqueId() === triggerId) {
+      ScriptApp.deleteTrigger(triggers[i]);
+      break;
+    }
+  }
+}
+
+function sendInterviewReminderEmail(e) {
+  var triggerId = e.triggerUid;
+  var candidateEmail = PropertiesService.getScriptProperties().getProperty(triggerId);
+  Logger.log("sendInterviewReminderEmail fired for trigger ID: " + triggerId + ", candidateEmail: " + candidateEmail);
+  
+  if (!candidateEmail) {
+    Logger.log("No candidate email mapped for trigger ID: " + triggerId);
     return;
   }
 
-  var sources = ["LinkedIn", "Other"];
-  var roles = ["AI Automation Engineer", "Web Developer", "Sustainability"];
-  var deletedCount = 0;
+  try {
+    const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName("Candidates");
+    const data = sheet.getDataRange().getValues();
+    let rowIndex = -1;
+    let candidateName = "";
+    var role = "";
+    var dateVal = "";
+    var timeVal = "";
 
-  sources.forEach(function(sourceName) {
-    var sourceSearch = Drive.Files.list({
-      q: `title = '${sourceName}' and '${processedFolderId}' in parents and mimeType = 'application/vnd.google-apps.folder' and trashed = false`,
-      maxResults: 1
-    });
-    if (sourceSearch.items && sourceSearch.items.length > 0) {
-      var sourceFolderId = sourceSearch.items[0].id;
-      roles.forEach(function(roleName) {
-        var roleSearch = Drive.Files.list({
-          q: `title = '${roleName}' and '${sourceFolderId}' in parents and mimeType = 'application/vnd.google-apps.folder' and trashed = false`,
-          maxResults: 1
-        });
-        if (roleSearch.items && roleSearch.items.length > 0) {
-          deletedCount += deleteOldFilesFromFolder(roleSearch.items[0].id, 15);
-        }
-      });
+    for (let i = 1; i < data.length; i++) {
+      if (data[i][1] && data[i][1].toString().trim().toLowerCase() === candidateEmail.trim().toLowerCase()) {
+        rowIndex = i + 1;
+        candidateName = data[i][0].toString().trim();
+        role = data[i][2].toString().trim();
+        dateVal = data[i][7]; // Interview Date
+        timeVal = data[i][8]; // Interview Time
+        break;
+      }
     }
-  });
 
-  Logger.log("[CLEANUP] Deleted " + deletedCount + " processed resumes older than 15 days.");
+    if (rowIndex !== -1) {
+      var formattedDate = "";
+      if (dateVal instanceof Date) {
+        formattedDate = Utilities.formatDate(dateVal, Session.getScriptTimeZone(), "dd MMM yyyy");
+      } else {
+        formattedDate = dateVal.toString().trim();
+      }
+
+      var formattedTime = "";
+      if (timeVal instanceof Date) {
+        formattedTime = Utilities.formatDate(timeVal, Session.getScriptTimeZone(), "hh:mm a");
+      } else {
+        formattedTime = timeVal.toString().trim();
+      }
+
+      const logoBlob = getLogoBlobSafely();
+      const subject = "Interview Reminder - Deepwoods Green Initiatives Pvt. Ltd.";
+      
+      var htmlBody = `
+      <div style="font-family:'Trebuchet MS',sans-serif;font-size:14px;line-height:1.7;color:#333;max-width:680px;">
+        <p>Dear <b>${candidateName}</b>,</p>
+        <p>This is a friendly reminder of your upcoming interview for the position of <b>${role}</b>.</p>
+        <p><b>Interview Details:</b></p>
+        <ul>
+          <li><b>Date:</b> ${formattedDate}</li>
+          <li><b>Time:</b> ${formattedTime}</li>
+        </ul>
+        <p>Please ensure you are ready and have a stable internet connection.</p>
+        <p>Best regards,<br><b>Deepwoods Green Initiatives Pvt. Ltd.</b></p>
+        <img src="cid:deepwoodsLogo" width="300">
+      </div>
+      `;
+
+      var options = { htmlBody: htmlBody };
+      if (logoBlob) {
+        options.inlineImages = { deepwoodsLogo: logoBlob };
+      } else {
+        htmlBody = htmlBody.replace(/<img[^>]+deepwoodsLogo[^>]*>/gi, "");
+        options.htmlBody = htmlBody;
+      }
+
+      GmailApp.sendEmail(candidateEmail, subject, "", options);
+      Logger.log("Reminder email sent successfully to: " + candidateEmail);
+
+      // Update Candidates sheet Email Status (column F / 6)
+      sheet.getRange(rowIndex, 6).setValue("Reminder Sent");
+    }
+  } catch (error) {
+    Logger.log("Error in sendInterviewReminderEmail: " + error.toString());
+  } finally {
+    PropertiesService.getScriptProperties().deleteProperty(triggerId);
+    deleteTriggerById(triggerId);
+  }
 }
 
-function deleteOldFilesFromFolder(folderId, ageInDays) {
-  var filesResult = Drive.Files.list({
-    q: `'${folderId}' in parents and trashed = false`
-  });
-  var now = new Date();
-  var limitMs = ageInDays * 24 * 60 * 60 * 1000;
-  var deleteCount = 0;
-
-  if (filesResult.items) {
-    filesResult.items.forEach(function(file) {
-      var createdDate = new Date(file.createdDate);
-      if (now.getTime() - createdDate.getTime() > limitMs) {
-        Logger.log("[FILE DELETED] Processed resume file " + file.title + " deleted (older than " + ageInDays + " days).");
-        Drive.Files.trash(file.id);
-        deleteCount++;
+// Overridden Daily/Periodic cleanup trigger: deletes resume files of REJECTED candidates older than 30 days
+function cleanupOldResumes(sheetId) {
+  try {
+    var ss = sheetId ? SpreadsheetApp.openById(sheetId) : SpreadsheetApp.getActiveSpreadsheet();
+    var logSheet = ss.getSheetByName(LOG_SHEET_NAME);
+    if (!logSheet) {
+      Logger.log("[CLEANUP] log sheet ProcessedResumesLog not found.");
+      return;
+    }
+    
+    var data = logSheet.getDataRange().getValues();
+    var now = new Date();
+    var ageLimitMs = 30 * 24 * 60 * 60 * 1000; // 30 days limit
+    var deletedCount = 0;
+    
+    for (var i = 1; i < data.length; i++) {
+      var email = data[i][0];
+      var fileId = data[i][1];
+      var rejectionDateVal = data[i][2];
+      
+      if (fileId && rejectionDateVal && rejectionDateVal !== "Deleted") {
+        var rejectionDate = new Date(rejectionDateVal);
+        if (!isNaN(rejectionDate.getTime())) {
+          if (now.getTime() - rejectionDate.getTime() >= ageLimitMs) {
+            Logger.log("[CLEANUP] Deleting resume file ID=" + fileId + " for rejected email=" + email);
+            try {
+              Drive.Files.remove(fileId);
+              deletedCount++;
+              Logger.log("[CLEANUP] File deleted successfully.");
+            } catch (err) {
+              Logger.log("[CLEANUP] Error calling Drive.Files.remove: " + err.toString());
+            }
+            logSheet.getRange(i + 1, 2).setValue("");
+            logSheet.getRange(i + 1, 3).setValue("Deleted");
+          }
+        }
       }
-    });
+    }
+    Logger.log("[CLEANUP] Rejected candidates resume files deleted: " + deletedCount);
+  } catch (e) {
+    Logger.log("[CLEANUP ERROR] cleanupOldResumes failed: " + e.toString());
   }
-  return deleteCount;
 }
 
 /**
@@ -1569,32 +2049,32 @@ function deleteOldFilesFromFolder(folderId, ageInDays) {
 function runExistingDataRepair() {
   const sheetId = "1KmEOk4qn0gF8pAbBUNCcrXuw2U4P3x18eVLAUxe1vtM";
   const ss = SpreadsheetApp.openById(sheetId);
-  var allowedStatuses = ['Selected', 'Interviewing', 'On Hold', 'Rejected'];
+  var allowedStatuses = ['Submitted', 'Shortlisted', 'Scheduled', 'On Hold', 'Selected', 'Rejected'];
 
   // 1. Repair Candidates Sheet
   const masterSheet = ss.getSheetByName("Candidates");
   if (masterSheet) {
     var lastCol = masterSheet.getLastColumn();
-    if (lastCol > 7) {
-      masterSheet.getRange(1, 8, masterSheet.getLastRow(), lastCol - 7).clearContent();
+    if (lastCol > 9) {
+      masterSheet.getRange(1, 10, masterSheet.getLastRow(), lastCol - 9).clearContent();
     }
     const data = masterSheet.getDataRange().getValues();
     for (let i = 1; i < data.length; i++) {
       const row = data[i];
       var status = row[4] ? row[4].toString().trim() : "";
-      if (status === "Applied" || status === "Shortlisted" || status === "Scheduled") {
-        status = "Interviewing";
+      if (status === "Applied" || status === "Interviewing") {
+        status = "Submitted";
       } else if (status === "Maybe") {
         status = "On Hold";
       } else if (status === "Not Selected") {
         status = "Rejected";
       } else if (allowedStatuses.indexOf(status) === -1) {
-        status = "Interviewing";
+        status = "Submitted";
       }
       masterSheet.getRange(i + 1, 5).setValue(status);
 
       var emailStatus = row[5] ? row[5].toString().trim() : "Pending";
-      if (emailStatus !== "Sent" && emailStatus !== "Pending" && emailStatus !== "Failed") {
+      if (emailStatus !== "Sent" && emailStatus !== "Pending" && emailStatus !== "Failed" && emailStatus !== "Shortlisted Email Sent" && emailStatus !== "On Hold Email Sent" && emailStatus !== "Interview Scheduled" && emailStatus !== "Reminder Sent" && emailStatus !== "Joining Letter Sent" && emailStatus !== "Rejection Email Sent") {
         emailStatus = "Pending";
       }
       masterSheet.getRange(i + 1, 6).setValue(emailStatus);
@@ -1644,7 +2124,7 @@ function runExistingDataRepair() {
         var location = "N/A";
         var linkedin = "";
         var github = "";
-        var status = "Interviewing";
+        var status = "Submitted";
 
         row.forEach(function(cell) {
           if (cell === null || cell === undefined) return;
@@ -1661,8 +2141,8 @@ function runExistingDataRepair() {
             if (github && !github.startsWith("http")) github = "https://" + github;
           } else if (allowedStatuses.indexOf(val) !== -1) {
             status = val;
-          } else if (val === "Applied" || val === "Shortlisted" || val === "Scheduled") {
-            status = "Interviewing";
+          } else if (val === "Applied" || val === "Interviewing") {
+            status = "Submitted";
           } else if (val === "Maybe") {
             status = "On Hold";
           } else if (val === "Not Selected") {

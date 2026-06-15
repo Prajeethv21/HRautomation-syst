@@ -1,7 +1,7 @@
 import React, { useEffect, useState, useMemo, useRef } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { 
-  getDepartmentCandidates, sendJoiningLetter, sendRejectionEmail, 
+  getDepartmentCandidates, sendJoiningLetter, sendRejectionEmail, sendInterviewEmail,
   updateCandidateStatus, type DepartmentCandidate 
 } from '../services/googleAppsScript';
 import { DEPARTMENTS } from '../config/departments';
@@ -16,6 +16,12 @@ import CandidateDetailsModal from '../components/CandidateDetailsModal';
 
 const getStatusBadgeClass = (status: string) => {
   switch (status) {
+    case 'Submitted':
+      return 'bg-gray-50 text-gray-700 border-gray-100';
+    case 'Shortlisted':
+      return 'bg-sky-50 text-sky-700 border-sky-100';
+    case 'Scheduled':
+      return 'bg-purple-50 text-purple-700 border-purple-100';
     case 'Interviewing':
       return 'bg-sky-50 text-sky-700 border-sky-100';
     case 'Selected':
@@ -31,9 +37,11 @@ const getStatusBadgeClass = (status: string) => {
 
 
 const SHEET_STATUS_OPTIONS = [
-  'Selected',
-  'Interviewing',
+  'Submitted',
+  'Shortlisted',
+  'Scheduled',
   'On Hold',
+  'Selected',
   'Rejected'
 ] as const;
 
@@ -81,6 +89,7 @@ const DepartmentDetails: React.FC = () => {
   // Single action loading states (needed for modal actions)
   const [sendingLetterEmail, setSendingLetterEmail] = useState<string | null>(null);
   const [sendingRejectionEmail, setSendingRejectionEmail] = useState<string | null>(null);
+  const [sendingInterviewEmail, setSendingInterviewEmail] = useState<string | null>(null);
 
   // Controlled select state for bulk update
   const [bulkStatusValue, setBulkStatusValue] = useState("");
@@ -89,9 +98,16 @@ const DepartmentDetails: React.FC = () => {
   const renderActionButton = (candidate: DepartmentCandidate) => {
     const isSendingLetter = sendingLetterEmail === candidate.email;
     const isSendingRejection = sendingRejectionEmail === candidate.email;
+    const isSendingInterview = sendingInterviewEmail === candidate.email;
     const emailStatus = (candidate as any).emailStatus;
 
-    if (emailStatus === 'Sent') {
+    if (
+      emailStatus === 'Sent' ||
+      emailStatus === 'Joining Letter Sent' ||
+      emailStatus === 'Rejection Email Sent' ||
+      emailStatus === 'Interview Scheduled' ||
+      emailStatus === 'Reminder Sent'
+    ) {
       return (
         <Button variant="outline" size="sm" disabled className="opacity-60 cursor-not-allowed">
           <Check className="w-3.5 h-3.5 mr-1 inline" />
@@ -111,6 +127,21 @@ const DepartmentDetails: React.FC = () => {
           className="active:scale-[0.95]"
         >
           Send Letter
+        </Button>
+      );
+    }
+
+    if (candidate.status === 'Scheduled') {
+      return (
+        <Button
+          variant="primary"
+          size="sm"
+          isLoading={isSendingInterview}
+          onClick={() => handleSendInterviewEmail(candidate.email, candidate.candidateName)}
+          icon={<Send className="w-3.5 h-3.5" />}
+          className="active:scale-[0.95] bg-purple-600 hover:bg-purple-700 border-purple-600 hover:border-purple-700 text-white"
+        >
+          Send Interview
         </Button>
       );
     }
@@ -394,6 +425,29 @@ const DepartmentDetails: React.FC = () => {
     }
   };
 
+  // Send Interview Email handler (single candidate)
+  const handleSendInterviewEmail = async (email: string, name: string) => {
+    try {
+      setSendingInterviewEmail(email);
+      showToast(`Scheduling and sending interview invitation to ${name}...`, 'info');
+
+      const response = await sendInterviewEmail(email);
+
+      if (response.success) {
+        showToast('Interview Invitation Sent Successfully', 'success');
+        await fetchCandidatesData(true);
+        window.dispatchEvent(new Event('candidate-updated'));
+      } else {
+        showToast(response.message || 'Failed To Send Interview Invitation', 'error');
+      }
+    } catch (err: any) {
+      console.error(err);
+      showToast(err.message || 'Failed To Send Interview Invitation', 'error');
+    } finally {
+      setSendingInterviewEmail(null);
+    }
+  };
+
   // Helper sorting headers render
   const renderSortHeader = (label: string, field: 'candidateName' | 'workExperience' | 'status' | 'source') => {
     const isSorted = sortField === field;
@@ -531,9 +585,12 @@ const DepartmentDetails: React.FC = () => {
                     <div className="grid grid-cols-1 gap-0.5">
                       {[
                         { label: 'All Statuses', value: '', dot: null },
-                        { label: 'Selected', value: 'Selected', dot: 'bg-[#6FAF45]' },
+                        { label: 'Submitted', value: 'Submitted', dot: 'bg-gray-400' },
+                        { label: 'Shortlisted', value: 'Shortlisted', dot: 'bg-sky-400' },
+                        { label: 'Scheduled', value: 'Scheduled', dot: 'bg-purple-400' },
                         { label: 'Interviewing', value: 'Interviewing', dot: 'bg-sky-400' },
                         { label: 'On Hold', value: 'On Hold', dot: 'bg-[#D97706]' },
+                        { label: 'Selected', value: 'Selected', dot: 'bg-[#6FAF45]' },
                         { label: 'Rejected', value: 'Rejected', dot: 'bg-[#C92A2A]' },
                       ].map((s) => (
                         <button
@@ -662,7 +719,7 @@ const DepartmentDetails: React.FC = () => {
             disabled={selectedEmails.size === 0 || bulkProcessing}
           >
             <option value="" disabled hidden>Bulk Status Update...</option>
-            {['Selected', 'Interviewing', 'On Hold', 'Rejected'].map(s => (
+            {['Submitted', 'Shortlisted', 'Scheduled', 'On Hold', 'Selected', 'Rejected'].map(s => (
               <option key={s} value={s}>{s}</option>
             ))}
           </select>
@@ -910,6 +967,12 @@ const DepartmentDetails: React.FC = () => {
           setIsDetailsOpen(false);
           if (selectedCandidate) {
             await handleSendRejectionEmail(email, selectedCandidate.candidateName);
+          }
+        }}
+        onSendInterview={async (email) => {
+          setIsDetailsOpen(false);
+          if (selectedCandidate) {
+            await handleSendInterviewEmail(email, selectedCandidate.candidateName);
           }
         }}
       />

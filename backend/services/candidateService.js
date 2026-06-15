@@ -137,6 +137,51 @@ export async function sendRejectionEmailWorkflow(email) {
     throw new Error(`Failed To Send Rejection Email: ${error.message}`);
   }
 }
+
+export async function sendInterviewEmailWorkflow(email) {
+  const { url, sheetId } = getCredentials();
+
+  const payload = {
+    action: 'sendInterviewEmail',
+    sheetId: sheetId,
+    candidateEmail: email
+  };
+
+  console.log('Backend sending POST to Apps Script for interview email:', url);
+  console.log('Backend interview email payload:', JSON.stringify(payload));
+
+  console.log("Calling Apps Script:", payload);
+
+  try {
+    const response = await axios.post(url, payload, {
+      headers: { 'Content-Type': 'application/json' },
+      timeout: 20000
+    });
+
+    console.log("Apps Script Response:", response.data);
+    console.log('Backend received Apps Script response status:', response.status);
+    console.log('Backend received Apps Script response body:', JSON.stringify(response.data));
+
+    if (response.data && response.data.success) {
+      return {
+        success: true,
+        mode: 'google',
+        message: response.data.message || 'Interview Email Sent Successfully'
+      };
+    }
+
+    throw new Error(response.data?.message || 'Apps Script returned failure status');
+  } catch (error) {
+    console.error("Apps Script Error:", error.response?.data || error.message);
+    console.error(`Apps Script interview email workflow failed: ${error.message}`);
+    if (error.response) {
+      console.error('Apps Script error response status:', error.response.status);
+      console.error('Apps Script error response body:', JSON.stringify(error.response.data));
+    }
+    throw new Error(`Failed to Send Interview Email: ${error.message}`);
+  }
+}
+
 export async function updateCandidateStatus(email, status) {
   const { url, sheetId } = getCredentials();
 

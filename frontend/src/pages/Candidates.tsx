@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useMemo, useRef } from 'react';
 import { 
-  getCandidates, sendJoiningLetter, sendRejectionEmail, 
+  getCandidates, sendJoiningLetter, sendRejectionEmail, sendInterviewEmail,
   updateCandidateStatus, triggerResumeProcessing, type Candidate 
 } from '../services/googleAppsScript';
 import { 
@@ -14,6 +14,12 @@ import { useToast } from '../components/ui/Toast';
 
 const getStatusBadgeClass = (status: string) => {
   switch (status) {
+    case 'Submitted':
+      return 'bg-gray-50 text-gray-700 border-gray-100';
+    case 'Shortlisted':
+      return 'bg-sky-50 text-sky-700 border-sky-100';
+    case 'Scheduled':
+      return 'bg-purple-50 text-purple-700 border-purple-100';
     case 'Interviewing':
       return 'bg-sky-50 text-sky-700 border-sky-100';
     case 'Selected':
@@ -45,9 +51,11 @@ const getSourceBadgeClass = (source?: string) => {
 };
 
 const SHEET_STATUS_OPTIONS = [
-  'Selected',
-  'Interviewing',
+  'Submitted',
+  'Shortlisted',
+  'Scheduled',
   'On Hold',
+  'Selected',
   'Rejected'
 ] as const;
 
@@ -93,6 +101,7 @@ const Candidates: React.FC = () => {
   // Action status tracking (keyed by email to avoid collisions)
   const [sendingLetterEmail, setSendingLetterEmail] = useState<string | null>(null);
   const [sendingRejectionEmail, setSendingRejectionEmail] = useState<string | null>(null);
+  const [sendingInterviewEmail, setSendingInterviewEmail] = useState<string | null>(null);
 
   // Controlled select state for bulk update
   const [bulkStatusValue, setBulkStatusValue] = useState("");
@@ -366,6 +375,29 @@ const Candidates: React.FC = () => {
     }
   };
 
+  // Send Interview Email handler (single candidate)
+  const handleSendInterviewEmail = async (email: string, name: string) => {
+    try {
+      setSendingInterviewEmail(email);
+      showToast(`Scheduling and sending interview invitation to ${name}...`, 'info');
+
+      const response = await sendInterviewEmail(email);
+
+      if (response.success) {
+        showToast('Interview Invitation Sent Successfully', 'success');
+        await fetchCandidatesData(true);
+        window.dispatchEvent(new Event('candidate-updated'));
+      } else {
+        showToast(response.message || 'Failed To Send Interview Invitation', 'error');
+      }
+    } catch (err: any) {
+      console.error(err);
+      showToast(err.message || 'Failed To Send Interview Invitation', 'error');
+    } finally {
+      setSendingInterviewEmail(null);
+    }
+  };
+
   // Helper: renders sorting headers
   const renderSortHeader = (label: string, field: 'candidateName' | 'joiningDate' | 'status' | 'source') => {
     const isSorted = sortField === field;
@@ -395,8 +427,15 @@ const Candidates: React.FC = () => {
   const renderActionButton = (candidate: Candidate) => {
     const isSendingLetter = sendingLetterEmail === candidate.email;
     const isSendingRejection = sendingRejectionEmail === candidate.email;
+    const isSendingInterview = sendingInterviewEmail === candidate.email;
 
-    if (candidate.emailStatus === 'Sent') {
+    if (
+      candidate.emailStatus === 'Sent' ||
+      candidate.emailStatus === 'Joining Letter Sent' ||
+      candidate.emailStatus === 'Rejection Email Sent' ||
+      candidate.emailStatus === 'Interview Scheduled' ||
+      candidate.emailStatus === 'Reminder Sent'
+    ) {
       return (
         <Button variant="outline" size="sm" disabled className="opacity-60 cursor-not-allowed">
           <Check className="w-3.5 h-3.5 mr-1 inline" />
@@ -416,6 +455,21 @@ const Candidates: React.FC = () => {
           className="active:scale-[0.95]"
         >
           Send Letter
+        </Button>
+      );
+    }
+
+    if (candidate.status === 'Scheduled') {
+      return (
+        <Button
+          variant="primary"
+          size="sm"
+          isLoading={isSendingInterview}
+          onClick={() => handleSendInterviewEmail(candidate.email, candidate.candidateName)}
+          icon={<Send className="w-3.5 h-3.5" />}
+          className="active:scale-[0.95] bg-purple-600 hover:bg-purple-700 border-purple-600 hover:border-purple-700"
+        >
+          Send Interview
         </Button>
       );
     }
@@ -514,9 +568,12 @@ const Candidates: React.FC = () => {
                     <div className="grid grid-cols-1 gap-0.5">
                       {[
                         { label: 'All Statuses', value: '', dot: null },
-                        { label: 'Selected', value: 'Selected', dot: 'bg-[#6FAF45]' },
+                        { label: 'Submitted', value: 'Submitted', dot: 'bg-gray-400' },
+                        { label: 'Shortlisted', value: 'Shortlisted', dot: 'bg-sky-400' },
+                        { label: 'Scheduled', value: 'Scheduled', dot: 'bg-purple-400' },
                         { label: 'Interviewing', value: 'Interviewing', dot: 'bg-sky-400' },
                         { label: 'On Hold', value: 'On Hold', dot: 'bg-[#D97706]' },
+                        { label: 'Selected', value: 'Selected', dot: 'bg-[#6FAF45]' },
                         { label: 'Rejected', value: 'Rejected', dot: 'bg-[#C92A2A]' },
                       ].map((s) => (
                         <button
@@ -836,13 +893,15 @@ const Candidates: React.FC = () => {
 
                     <td className="px-6 py-4 whitespace-nowrap">
                       <span className={`text-[10px] font-extrabold px-2.5 py-0.5 rounded-full uppercase border ${
-                        candidate.emailStatus === 'Sent'
-                          ? 'bg-[#EDF9E8] text-[#6FAF45] border-[#D7F1C8]'
+                        candidate.emailStatus && candidate.emailStatus.toLowerCase().includes('sent')
+                          ? 'bg-[#EDF9E8] text-[#2D6A2D] border-[#D7F1C8]'
+                          : candidate.emailStatus === 'Interview Scheduled'
+                          ? 'bg-purple-50 text-purple-700 border-purple-100'
                           : candidate.emailStatus === 'Failed'
                           ? 'bg-[#FFF5F5] text-[#C92A2A] border-[#FFC9C9]'
-                          : 'bg-[#F8FFF6] text-[#A8D672] border-[#E6F7E2]'
+                          : 'bg-[#F4F7F5] text-gray-500 border-[#E3ECE6]'
                       }`}>
-                        {candidate.emailStatus}
+                        {candidate.emailStatus || 'Pending'}
                       </span>
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-right text-xs">
@@ -928,6 +987,12 @@ const Candidates: React.FC = () => {
           setIsDetailsOpen(false);
           if (selectedCandidate) {
             await handleSendRejectionEmail(email, selectedCandidate.candidateName);
+          }
+        }}
+        onSendInterview={async (email) => {
+          setIsDetailsOpen(false);
+          if (selectedCandidate) {
+            await handleSendInterviewEmail(email, selectedCandidate.candidateName);
           }
         }}
       />

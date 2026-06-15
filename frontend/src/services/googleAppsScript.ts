@@ -1,4 +1,4 @@
-export type ATSStatus = 'Selected' | 'Interviewing' | 'On Hold' | 'Rejected';
+export type ATSStatus = 'Submitted' | 'Shortlisted' | 'Scheduled' | 'On Hold' | 'Selected' | 'Rejected' | 'Interviewing';
 export type ATSSource = 'LinkedIn' | 'Career Page' | 'Referral' | 'Website' | 'Manual Entry' | 'Other';
 
 export interface Candidate {
@@ -7,9 +7,11 @@ export interface Candidate {
   role: string;
   joiningDate: string;
   status: ATSStatus | string;
-  emailStatus: 'Pending' | 'Sent' | 'Failed';
+  emailStatus: string;
   source?: ATSSource | string;
   resumeFileId?: string;
+  interviewDate?: string;
+  interviewTime?: string;
 }
 
 export interface DepartmentCandidate {
@@ -20,11 +22,14 @@ export interface DepartmentCandidate {
   ug: string;
   pg: string;
   college: string;
+  location?: string;
   linkedin: string;
   github: string;
   status: ATSStatus | string;
   source?: ATSSource | string;
   resumeFileId?: string;
+  interviewDate?: string;
+  interviewTime?: string;
 }
 
 export interface DashboardStats {
@@ -148,6 +153,40 @@ export const sendRejectionEmail = async (email: string): Promise<{ success: bool
   } catch (error: any) {
     console.error('Proxy rejection POST failed:', error);
     throw new Error('Failed To Send Rejection Email');
+  }
+};
+
+export const sendInterviewEmail = async (email: string): Promise<{ success: boolean; message: string }> => {
+  try {
+    const requestPayload = { email };
+    console.log('Sending interview email payload:', requestPayload);
+
+    const response = await fetch('/api/candidates/interview', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(requestPayload)
+    });
+
+    console.log('React received interview response status:', response.status);
+
+    if (!response.ok) {
+      throw new Error(`HTTP error! status: ${response.status}`);
+    }
+
+    const responseData = await response.json();
+    console.log('React received interview response body:', JSON.stringify(responseData));
+
+    if (responseData && responseData.success) {
+      return {
+        success: true,
+        message: responseData.message || 'Interview Email Sent Successfully'
+      };
+    }
+
+    throw new Error(responseData?.message || 'Proxy backend returned failure status');
+  } catch (error: any) {
+    console.error('Proxy interview POST failed:', error);
+    throw new Error('Failed To Send Interview Email');
   }
 };
 
