@@ -1,10 +1,12 @@
 import React, { useState } from 'react';
 import { NavLink } from 'react-router-dom';
-import { LayoutDashboard, Users, ChevronLeft, ChevronRight } from 'lucide-react';
+import { LayoutDashboard, Users, ChevronLeft, ChevronRight, Building2, ChevronDown } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
+import { DEPARTMENTS } from '../config/departments';
 
 const Sidebar: React.FC = () => {
   const [isCollapsed, setIsCollapsed] = useState(false);
+  const [isDeptsOpen, setIsDeptsOpen] = useState(true);
 
   const navItems = [
     { name: 'Dashboard', path: '/dashboard', icon: LayoutDashboard },
@@ -56,7 +58,7 @@ const Sidebar: React.FC = () => {
       </div>
 
       {/* Navigation Links */}
-      <nav className="flex-1 px-3 py-6 space-y-2">
+      <nav className="flex-1 px-3 py-6 space-y-2 overflow-y-auto">
         {navItems.map((item) => {
           const Icon = item.icon;
           return (
@@ -89,6 +91,58 @@ const Sidebar: React.FC = () => {
             </NavLink>
           );
         })}
+
+        {/* Collapsible Departments Menu */}
+        <div className="space-y-1 pt-2 border-t border-brand-border/60">
+          <button
+            onClick={() => {
+              if (isCollapsed) {
+                setIsCollapsed(false);
+              }
+              setIsDeptsOpen(!isDeptsOpen);
+            }}
+            className={`w-full flex items-center justify-between px-3.5 py-3 rounded-xl text-sm font-semibold transition-all duration-205 text-gray-600 hover:bg-[#EDF9E8]/40 hover:text-brand-text select-none ${
+              isCollapsed ? 'justify-center' : ''
+            }`}
+            title={isCollapsed ? 'Departments' : undefined}
+          >
+            <div className="flex items-center gap-3.5">
+              <Building2 className="w-5 h-5 shrink-0 text-gray-500" />
+              {!isCollapsed && <span className="font-jakarta">Departments</span>}
+            </div>
+            {!isCollapsed && (
+              <ChevronDown className={`w-4 h-4 text-gray-400 transition-transform duration-200 ${isDeptsOpen ? 'rotate-180' : ''}`} />
+            )}
+          </button>
+          
+          <AnimatePresence initial={false}>
+            {isDeptsOpen && !isCollapsed && (
+              <motion.div
+                initial={{ height: 0, opacity: 0 }}
+                animate={{ height: 'auto', opacity: 1 }}
+                exit={{ height: 0, opacity: 0 }}
+                transition={{ duration: 0.2 }}
+                className="pl-5 space-y-1 overflow-hidden"
+              >
+                {DEPARTMENTS.map((dept) => (
+                  <NavLink
+                    key={dept.id}
+                    to={`/departments/${dept.id}`}
+                    className={({ isActive }) =>
+                      `flex items-center gap-3 px-3.5 py-2 rounded-xl text-xs font-semibold transition-all duration-200 select-none ${
+                        isActive
+                          ? 'bg-[#EDF9E8] text-[#1B4332] font-bold border-l-2 border-[#6FAF45] pl-2.5'
+                          : 'text-gray-500 hover:bg-[#EDF9E8]/35 hover:text-brand-text'
+                      }`
+                    }
+                  >
+                    <span className="truncate">{dept.name}</span>
+                  </NavLink>
+                ))}
+              </motion.div>
+            )}
+          </AnimatePresence>
+        </div>
       </nav>
 
       {/* Collapse Toggle Button */}

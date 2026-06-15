@@ -1,29 +1,55 @@
 import React, { useEffect, useState, useMemo, useRef } from 'react';
-import { getCandidates, sendJoiningLetter, sendRejectionEmail, updateCandidateStatus, type Candidate } from '../services/googleAppsScript';
-import { Search, Filter, RefreshCw, Eye, Send, AlertCircle, Users, Check, Clock, XCircle } from 'lucide-react';
+import { 
+  getCandidates, sendJoiningLetter, sendRejectionEmail, 
+  updateCandidateStatus, triggerResumeProcessing, type Candidate 
+} from '../services/googleAppsScript';
+import { 
+  Search, Filter, RefreshCw, Eye, Send, AlertCircle, Users, Check, 
+  Clock, XCircle, FileText, Download 
+} from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import Button from '../components/ui/Button';
 import CandidateDetailsModal from '../components/CandidateDetailsModal';
 import { useToast } from '../components/ui/Toast';
 
-// Returns tailwind classes for each status badge — mirrors Google Sheets values exactly
 const getStatusBadgeClass = (status: string) => {
   switch (status) {
+    case 'Interviewing':
+      return 'bg-sky-50 text-sky-700 border-sky-100';
     case 'Selected':
       return 'bg-[#EDF9E8] text-[#2D6A2D] border-[#D7F1C8]';
-    case 'Not Selected':
+    case 'Rejected':
       return 'bg-[#FFF5F5] text-[#C92A2A] border-[#FFC9C9]';
-    case 'Maybe':
+    case 'On Hold':
       return 'bg-[#FFFBEB] text-[#92400E] border-[#FDE68A]';
     default:
       return 'bg-[#F4F7F5] text-gray-500 border-[#E3ECE6]';
   }
 };
 
-// Google Sheets is the single source of truth — these are the only valid status values
-const SHEET_STATUS_OPTIONS = ['Selected', 'Not Selected', 'Maybe'] as const;
+const getSourceBadgeClass = (source?: string) => {
+  switch (source) {
+    case 'LinkedIn':
+      return 'bg-sky-50 text-sky-700 border-sky-100';
+    case 'Career Page':
+      return 'bg-teal-50 text-teal-700 border-teal-100';
+    case 'Referral':
+      return 'bg-purple-50 text-purple-700 border-purple-100';
+    case 'Website':
+      return 'bg-blue-50 text-blue-700 border-blue-100';
+    case 'Manual Entry':
+      return 'bg-orange-50 text-orange-700 border-orange-100';
+    default:
+      return 'bg-gray-50 text-gray-600 border-gray-100';
+  }
+};
 
-
+const SHEET_STATUS_OPTIONS = [
+  'Selected',
+  'Interviewing',
+  'On Hold',
+  'Rejected'
+] as const;
 
 const Candidates: React.FC = () => {
   const { showToast } = useToast();
@@ -37,12 +63,24 @@ const Candidates: React.FC = () => {
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState('');
   const [emailStatusFilter, setEmailStatusFilter] = useState('');
+  const [sourceFilter, setSourceFilter] = useState('');
 
   // Filter Popover state
   const [isFilterOpen, setIsFilterOpen] = useState(false);
   const [tempStatusFilter, setTempStatusFilter] = useState('');
   const [tempEmailStatusFilter, setTempEmailStatusFilter] = useState('');
+  const [tempSourceFilter, setTempSourceFilter] = useState('');
   const filterRef = useRef<HTMLDivElement>(null);
+
+  // Sorting state
+  const [sortField, setSortField] = useState<'candidateName' | 'joiningDate' | 'status' | 'source' | null>(null);
+  const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc');
+
+  // Checkbox row selection state
+  const [selectedEmails, setSelectedEmails] = useState<Set<string>>(new Set());
+  const [bulkProcessing, setBulkProcessing] = useState(false);
+  const [bulkProgressMsg, setBulkProgressMsg] = useState<string | null>(null);
+  const [processingResumes, setProcessingResumes] = useState(false);
 
   // Pagination state
   const [currentPage, setCurrentPage] = useState(1);
@@ -94,11 +132,11 @@ const Candidates: React.FC = () => {
   // Reset page when filters change
   useEffect(() => {
     setCurrentPage(1);
-  }, [searchQuery, statusFilter, emailStatusFilter]);
+  }, [searchQuery, statusFilter, emailStatusFilter, sourceFilter]);
 
-  // Filter candidates list
+  // Filter & Sort candidates list
   const filteredCandidates = useMemo(() => {
-    return candidates.filter((candidate) => {
+    let list = candidates.filter((candidate) => {
       const nameMatch = candidate.candidateName ? candidate.candidateName.toLowerCase().includes(searchQuery.toLowerCase()) : false;
       const emailMatch = candidate.email ? candidate.email.toLowerCase().includes(searchQuery.toLowerCase()) : false;
       const roleMatch = candidate.role ? candidate.role.toLowerCase().includes(searchQuery.toLowerCase()) : false;
@@ -106,10 +144,28 @@ const Candidates: React.FC = () => {
 
       const matchesStatus = statusFilter === '' || candidate.status === statusFilter;
       const matchesEmailStatus = emailStatusFilter === '' || candidate.emailStatus === emailStatusFilter;
+      const matchesSource = sourceFilter === '' || candidate.source === sourceFilter;
 
-      return matchesSearch && matchesStatus && matchesEmailStatus;
+      return matchesSearch && matchesStatus && matchesEmailStatus && matchesSource;
     });
-  }, [candidates, searchQuery, statusFilter, emailStatusFilter]);
+
+    if (sortField) {
+      list.sort((a, b) => {
+        if (sortField === 'joiningDate') {
+          const dateA = a.joiningDate ? new Date(a.joiningDate).getTime() : 0;
+          const dateB = b.joiningDate ? new Date(b.joiningDate).getTime() : 0;
+          return sortDirection === 'asc' ? dateA - dateB : dateB - dateA;
+        }
+        const valA = (a[sortField] || '').toString().toLowerCase();
+        const valB = (b[sortField] || '').toString().toLowerCase();
+        return sortDirection === 'asc' 
+          ? valA.localeCompare(valB) 
+          : valB.localeCompare(valA);
+      });
+    }
+
+    return list;
+  }, [candidates, searchQuery, statusFilter, emailStatusFilter, sourceFilter, sortField, sortDirection]);
 
   // Paginated list
   const paginatedCandidates = useMemo(() => {
@@ -119,7 +175,181 @@ const Candidates: React.FC = () => {
 
   const totalPages = Math.max(1, Math.ceil(filteredCandidates.length / itemsPerPage));
 
-  // Send Joining Letter handler (unchanged)
+  // Selection handlers
+  const handleSelectAll = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.checked) {
+      const pageEmails = paginatedCandidates.map(c => c.email);
+      setSelectedEmails(new Set([...selectedEmails, ...pageEmails]));
+    } else {
+      const pageEmails = paginatedCandidates.map(c => c.email);
+      const updated = new Set(selectedEmails);
+      pageEmails.forEach(email => updated.delete(email));
+      setSelectedEmails(updated);
+    }
+  };
+
+  const handleSelectRow = (email: string) => {
+    const updated = new Set(selectedEmails);
+    if (updated.has(email)) {
+      updated.delete(email);
+    } else {
+      updated.add(email);
+    }
+    setSelectedEmails(updated);
+  };
+
+  // Bulk status update action
+  const handleBulkStatusUpdate = async (status: string) => {
+    setBulkProcessing(true);
+    let successCount = 0;
+    const targets = Array.from(selectedEmails);
+
+    for (let i = 0; i < targets.length; i++) {
+      const email = targets[i];
+      setBulkProgressMsg(`Updating status ${i + 1}/${targets.length} to "${status}"...`);
+      try {
+        const res = await updateCandidateStatus(email, status);
+        if (res.success) {
+          successCount++;
+        }
+      } catch (err) {
+        console.error(err);
+      }
+    }
+
+    showToast(`Successfully updated status for ${successCount}/${targets.length} candidates.`, 'success');
+    setBulkProcessing(false);
+    setBulkProgressMsg(null);
+    setSelectedEmails(new Set());
+    fetchCandidatesData(true);
+    window.dispatchEvent(new Event('candidate-updated'));
+  };
+
+  // Bulk joining letters
+  const handleBulkSendLetters = async () => {
+    const targets = candidates.filter(c => selectedEmails.has(c.email) && c.status === 'Selected');
+    if (targets.length === 0) {
+      showToast('No Selected candidates were found in your selection', 'info');
+      return;
+    }
+
+    setBulkProcessing(true);
+    let successCount = 0;
+
+    for (let i = 0; i < targets.length; i++) {
+      const target = targets[i];
+      setBulkProgressMsg(`Sending letter ${i + 1}/${targets.length} to ${target.candidateName}...`);
+      try {
+        const idx = candidates.findIndex((c) => c.email === target.email);
+        if (idx !== -1) {
+          const rowNumber = idx + 2;
+          const res = await sendJoiningLetter(rowNumber);
+          if (res.success) {
+            successCount++;
+          }
+        }
+      } catch (err) {
+        console.error(err);
+      }
+    }
+
+    showToast(`Dispatched joining letters to ${successCount}/${targets.length} candidates.`, 'success');
+    setBulkProcessing(false);
+    setBulkProgressMsg(null);
+    setSelectedEmails(new Set());
+    fetchCandidatesData(true);
+  };
+
+  // Bulk rejection letters
+  const handleBulkSendRejections = async () => {
+    const targets = candidates.filter(c => selectedEmails.has(c.email) && c.status === 'Rejected');
+    if (targets.length === 0) {
+      showToast('No Rejected candidates were found in your selection', 'info');
+      return;
+    }
+
+    setBulkProcessing(true);
+    let successCount = 0;
+
+    for (let i = 0; i < targets.length; i++) {
+      const target = targets[i];
+      setBulkProgressMsg(`Sending rejection email ${i + 1}/${targets.length} to ${target.candidateName}...`);
+      try {
+        const res = await sendRejectionEmail(target.email);
+        if (res.success) {
+          successCount++;
+        }
+      } catch (err) {
+        console.error(err);
+      }
+    }
+
+    showToast(`Sent rejection emails to ${successCount}/${targets.length} candidates.`, 'success');
+    setBulkProcessing(false);
+    setBulkProgressMsg(null);
+    setSelectedEmails(new Set());
+    fetchCandidatesData(true);
+  };
+
+  // Export Master Candidate list CSV
+  const handleExportCSV = () => {
+    if (filteredCandidates.length === 0) {
+      showToast('No candidates matching filters to export', 'info');
+      return;
+    }
+
+    const headers = ['Candidate Name', 'Email Address', 'Role Applied For', 'Joining Date', 'Status', 'Email Status', 'Source'];
+    const rows = filteredCandidates.map(c => [
+      c.candidateName,
+      c.email,
+      c.role,
+      c.joiningDate,
+      c.status,
+      c.emailStatus,
+      c.source || 'Website'
+    ]);
+
+    const csvContent = [
+      headers.join(','),
+      ...rows.map(r => r.map(val => `"${String(val || '').replace(/"/g, '""')}"`).join(','))
+    ].join('\n');
+
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.setAttribute('href', url);
+    link.setAttribute('download', 'Master_Candidates_Directory.csv');
+    link.style.visibility = 'hidden';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+
+    showToast('Candidates directory exported successfully', 'success');
+  };
+
+  // Scan resumes manual trigger
+  const handleScanResumes = async () => {
+    try {
+      setProcessingResumes(true);
+      showToast('Scanning Google Drive uploads folder for new resumes...', 'info');
+
+      const res = await triggerResumeProcessing();
+      if (res.success) {
+        showToast(res.message, 'success');
+        fetchCandidatesData(true);
+        window.dispatchEvent(new Event('candidate-updated'));
+      } else {
+        showToast('Resume processing failed', 'error');
+      }
+    } catch (err: any) {
+      console.error(err);
+      showToast(err.message || 'Failed to scan resumes', 'error');
+    } finally {
+      setProcessingResumes(false);
+    }
+  };
+
+  // Send Joining Letter handler (single candidate)
   const handleSendJoiningLetter = async (email: string, name: string) => {
     try {
       setSendingLetterEmail(email);
@@ -146,7 +376,7 @@ const Candidates: React.FC = () => {
     }
   };
 
-  // Send Rejection Email handler (new)
+  // Send Rejection Email handler (single candidate)
   const handleSendRejectionEmail = async (email: string, name: string) => {
     try {
       setSendingRejectionEmail(email);
@@ -169,12 +399,36 @@ const Candidates: React.FC = () => {
     }
   };
 
-  // Render dynamic action button — driven by Google Sheets status value
+  // Helper: renders sorting headers
+  const renderSortHeader = (label: string, field: 'candidateName' | 'joiningDate' | 'status' | 'source') => {
+    const isSorted = sortField === field;
+    return (
+      <button
+        onClick={() => {
+          if (sortField === field) {
+            setSortDirection(prev => prev === 'asc' ? 'desc' : 'asc');
+          } else {
+            setSortField(field);
+            setSortDirection('asc');
+          }
+        }}
+        className="flex items-center gap-1 hover:text-brand transition-colors text-left uppercase text-xs font-bold text-gray-500 font-jakarta select-none"
+      >
+        <span>{label}</span>
+        {isSorted ? (
+          sortDirection === 'asc' ? '▲' : '▼'
+        ) : (
+          <span className="opacity-30">↕</span>
+        )}
+      </button>
+    );
+  };
+
+  // Render dynamic action button
   const renderActionButton = (candidate: Candidate) => {
     const isSendingLetter = sendingLetterEmail === candidate.email;
     const isSendingRejection = sendingRejectionEmail === candidate.email;
 
-    // Email already sent — show locked state regardless of status
     if (candidate.emailStatus === 'Sent') {
       return (
         <Button variant="outline" size="sm" disabled className="opacity-60 cursor-not-allowed">
@@ -184,7 +438,6 @@ const Candidates: React.FC = () => {
       );
     }
 
-    // Selected → Send Joining Letter
     if (candidate.status === 'Selected') {
       return (
         <Button
@@ -200,8 +453,7 @@ const Candidates: React.FC = () => {
       );
     }
 
-    // Not Selected → Send Rejection Email
-    if (candidate.status === 'Not Selected') {
+    if (candidate.status === 'Rejected') {
       return (
         <button
           disabled={isSendingRejection}
@@ -218,28 +470,13 @@ const Candidates: React.FC = () => {
       );
     }
 
-    // Maybe → Disabled "Pending Decision"
-    if (candidate.status === 'Maybe') {
-      return (
-        <button
-          disabled
-          className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold rounded-xl border border-[#FDE68A] bg-[#FFFBEB] text-[#92400E] opacity-70 cursor-not-allowed"
-        >
-          <Clock className="w-3.5 h-3.5" />
-          Pending Decision
-        </button>
-      );
-    }
-
-    // Unknown status from sheet — show disabled fallback
     return (
       <Button variant="outline" size="sm" disabled className="opacity-50 cursor-not-allowed">
         <Clock className="w-3.5 h-3.5 mr-1 inline" />
-        Pending
+        In Pipeline
       </Button>
     );
   };
-
 
   return (
     <div className="space-y-6 animate-fade-in">
@@ -257,8 +494,25 @@ const Candidates: React.FC = () => {
           />
         </div>
 
-        {/* Filters Toolbar */}
-        <div className="flex items-center gap-3 w-full md:w-auto justify-end">
+        {/* Filters & Export Toolbar */}
+        <div className="flex flex-wrap items-center gap-3 w-full md:w-auto justify-end">
+          <button
+            onClick={handleScanResumes}
+            disabled={processingResumes}
+            className="inline-flex items-center gap-2 px-4 py-2.5 text-xs font-bold rounded-2xl border border-brand-border bg-white text-gray-600 hover:bg-[#EDF9E8]/40 hover:text-brand transition-all active:scale-[0.98] disabled:opacity-50"
+          >
+            {processingResumes ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <FileText className="w-3.5 h-3.5" />}
+            Scan Resumes
+          </button>
+
+          <button
+            onClick={handleExportCSV}
+            className="inline-flex items-center gap-2 px-4 py-2.5 text-xs font-bold rounded-2xl border border-brand-border bg-white text-gray-600 hover:bg-[#EDF9E8]/40 hover:text-brand transition-all active:scale-[0.98]"
+          >
+            <Download className="w-3.5 h-3.5" />
+            Export Directory
+          </button>
+
           {/* Custom Dropdown Filters Popover */}
           <div className="relative" ref={filterRef}>
             <button
@@ -267,17 +521,18 @@ const Candidates: React.FC = () => {
                 if (!isFilterOpen) {
                   setTempStatusFilter(statusFilter);
                   setTempEmailStatusFilter(emailStatusFilter);
+                  setTempSourceFilter(sourceFilter);
                 }
               }}
               className={`flex items-center gap-2.5 px-4.5 py-2.5 border rounded-2xl text-sm font-semibold transition-all duration-200 select-none active:scale-[0.98] ${
-                isFilterOpen || statusFilter || emailStatusFilter
+                isFilterOpen || statusFilter || emailStatusFilter || sourceFilter
                   ? 'bg-[#EDF9E8] border-[#A8D672]/50 text-[#1B4332] shadow-sm font-bold'
                   : 'bg-white border-brand-border text-gray-600 hover:bg-[#EDF9E8]/35'
               }`}
             >
               <Filter className="w-4 h-4" />
               <span>Filters</span>
-              {(statusFilter || emailStatusFilter) && (
+              {(statusFilter || emailStatusFilter || sourceFilter) && (
                 <span className="w-2 h-2 rounded-full bg-[#6FAF45]" />
               )}
             </button>
@@ -290,7 +545,7 @@ const Candidates: React.FC = () => {
                   animate={{ opacity: 1, y: 0, scale: 1 }}
                   exit={{ opacity: 0, y: 10, scale: 0.98 }}
                   transition={{ duration: 0.2, ease: 'easeOut' }}
-                  className="absolute right-0 mt-3 w-64 bg-white border border-brand-border rounded-3xl shadow-[0_20px_48px_rgba(168,214,114,0.15)] p-5 z-30 space-y-4"
+                  className="absolute right-0 mt-3 w-64 bg-white border border-brand-border rounded-3xl shadow-[0_20px_48px_rgba(168,214,114,0.15)] p-5 z-30 space-y-4 max-h-[480px] overflow-y-auto"
                 >
                   {/* Candidate Status Filter */}
                   <div className="space-y-2">
@@ -301,8 +556,9 @@ const Candidates: React.FC = () => {
                       {[
                         { label: 'All Statuses', value: '', dot: null },
                         { label: 'Selected', value: 'Selected', dot: 'bg-[#6FAF45]' },
-                        { label: 'Not Selected', value: 'Not Selected', dot: 'bg-[#C92A2A]' },
-                        { label: 'Maybe', value: 'Maybe', dot: 'bg-[#D97706]' },
+                        { label: 'Interviewing', value: 'Interviewing', dot: 'bg-sky-400' },
+                        { label: 'On Hold', value: 'On Hold', dot: 'bg-[#D97706]' },
+                        { label: 'Rejected', value: 'Rejected', dot: 'bg-[#C92A2A]' },
                       ].map((s) => (
                         <button
                           key={s.value}
@@ -318,6 +574,37 @@ const Candidates: React.FC = () => {
                             {s.label}
                           </span>
                           {tempStatusFilter === s.value && <Check className="w-3.5 h-3.5 text-[#6FAF45]" />}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Candidate Source Filter */}
+                  <div className="space-y-2 border-t border-brand-border/60 pt-3">
+                    <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider block font-jakarta">
+                      Candidate Source
+                    </span>
+                    <div className="grid grid-cols-1 gap-0.5">
+                      {[
+                        { label: 'All Sources', value: '' },
+                        { label: 'LinkedIn', value: 'LinkedIn' },
+                        { label: 'Career Page', value: 'Career Page' },
+                        { label: 'Referral', value: 'Referral' },
+                        { label: 'Website', value: 'Website' },
+                        { label: 'Manual Entry', value: 'Manual Entry' },
+                        { label: 'Other', value: 'Other' },
+                      ].map((src) => (
+                        <button
+                          key={src.label}
+                          onClick={() => setTempSourceFilter(src.value)}
+                          className={`w-full flex items-center justify-between px-3 py-1.5 rounded-xl text-xs font-semibold text-left transition-colors ${
+                            tempSourceFilter === src.value
+                              ? 'bg-[#EDF9E8] text-[#1B4332]'
+                              : 'text-gray-600 hover:bg-[#EDF9E8]/20'
+                          }`}
+                        >
+                          <span>{src.label}</span>
+                          {tempSourceFilter === src.value && <Check className="w-3.5 h-3.5 text-[#6FAF45]" />}
                         </button>
                       ))}
                     </div>
@@ -356,8 +643,10 @@ const Candidates: React.FC = () => {
                       onClick={() => {
                         setTempStatusFilter('');
                         setTempEmailStatusFilter('');
+                        setTempSourceFilter('');
                         setStatusFilter('');
                         setEmailStatusFilter('');
+                        setSourceFilter('');
                         setIsFilterOpen(false);
                         showToast('Filters reset successfully', 'info');
                       }}
@@ -369,6 +658,7 @@ const Candidates: React.FC = () => {
                       onClick={() => {
                         setStatusFilter(tempStatusFilter);
                         setEmailStatusFilter(tempEmailStatusFilter);
+                        setSourceFilter(tempSourceFilter);
                         setIsFilterOpen(false);
                         showToast('Filters applied successfully', 'success');
                       }}
@@ -394,6 +684,57 @@ const Candidates: React.FC = () => {
         </div>
       </div>
 
+      {/* Bulk action selection bar */}
+      {selectedEmails.size > 0 && (
+        <div className="bg-white border border-brand-border p-5 rounded-3xl shadow-sm flex flex-wrap items-center gap-3 justify-end animate-fade-in">
+          <span className="text-xs font-bold text-gray-500 mr-auto select-none">
+            {selectedEmails.size} candidates selected on page
+          </span>
+
+          <button
+            onClick={handleBulkSendRejections}
+            className="inline-flex items-center gap-2 px-4 py-2.5 text-xs font-bold rounded-2xl border border-red-200 bg-red-50 text-red-700 hover:bg-red-100 transition-all active:scale-[0.98]"
+            disabled={bulkProcessing}
+          >
+            <XCircle className="w-3.5 h-3.5" />
+            Send Rejections
+          </button>
+
+          <button
+            onClick={handleBulkSendLetters}
+            className="inline-flex items-center gap-2 px-4.5 py-2.5 text-xs font-bold rounded-2xl border border-[#6FAF45] bg-[#6FAF45] text-white hover:bg-[#5f953a] transition-all active:scale-[0.98]"
+            disabled={bulkProcessing}
+          >
+            <Send className="w-3.5 h-3.5" />
+            Send Letters
+          </button>
+
+          <select
+            value=""
+            onChange={(e) => {
+              if (e.target.value) {
+                handleBulkStatusUpdate(e.target.value);
+              }
+            }}
+            className="text-xs font-bold py-2.5 pl-3.5 pr-8 rounded-2xl border border-brand-border bg-white text-gray-600 hover:bg-brand-light focus:outline-none focus:ring-2 focus:ring-[#6FAF45]/50 transition-colors cursor-pointer appearance-none bg-[url('data:image/svg+xml;charset=utf-8,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2020%2020%22%20fill%3D%22none%22%3E%3Cpath%20d%3D%22M7%209l3%203%203-3%22%20stroke%3D%22%234B5563%22%20stroke-width%3D%221.5%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%2F%3E%3C%2Fsvg%3E')] bg-[right_8px_center] bg-no-repeat bg-[length:14px_14px]"
+            disabled={bulkProcessing}
+          >
+            <option value="">Bulk Status Update...</option>
+            {['Selected', 'Interviewing', 'On Hold', 'Rejected'].map(s => (
+              <option key={s} value={s}>{s}</option>
+            ))}
+          </select>
+        </div>
+      )}
+
+      {/* Bulk actions progress notification */}
+      {bulkProcessing && bulkProgressMsg && (
+        <div className="bg-[#EDF9E8] border border-[#A8D672]/30 text-[#1B4332] p-4 rounded-xl flex items-center gap-3 shadow-sm text-xs font-semibold animate-pulse">
+          <RefreshCw className="w-4 h-4 text-[#6FAF45] animate-spin" />
+          <span>{bulkProgressMsg}</span>
+        </div>
+      )}
+
       {/* Integration Error Notice */}
       {errorMsg && (
         <div className="bg-red-50 border border-red-200 text-red-800 p-4 rounded-xl flex items-start gap-3 shadow-sm text-xs">
@@ -412,11 +753,13 @@ const Candidates: React.FC = () => {
             <table className="w-full text-left border-collapse">
               <thead>
                 <tr className="bg-brand-bg/40 border-b border-brand-border">
+                  <th className="px-6 py-4.5 w-10"><input type="checkbox" disabled /></th>
                   <th className="px-6 py-4 text-xs font-bold text-gray-500 uppercase tracking-wider font-jakarta">Candidate Name</th>
                   <th className="px-6 py-4 text-xs font-bold text-gray-500 uppercase tracking-wider font-jakarta">Email</th>
                   <th className="px-6 py-4 text-xs font-bold text-gray-500 uppercase tracking-wider font-jakarta">Role</th>
                   <th className="px-6 py-4 text-xs font-bold text-gray-500 uppercase tracking-wider font-jakarta">Joining Date</th>
                   <th className="px-6 py-4 text-xs font-bold text-gray-500 uppercase tracking-wider font-jakarta">Status</th>
+                  <th className="px-6 py-4 text-xs font-bold text-gray-500 uppercase tracking-wider font-jakarta">Source</th>
                   <th className="px-6 py-4 text-xs font-bold text-gray-500 uppercase tracking-wider font-jakarta">Email Status</th>
                   <th className="px-6 py-4 text-xs font-bold text-gray-500 uppercase tracking-wider text-right font-jakarta">Actions</th>
                 </tr>
@@ -424,11 +767,13 @@ const Candidates: React.FC = () => {
               <tbody className="divide-y divide-brand-border">
                 {[...Array(5)].map((_, i) => (
                   <tr key={i} className="animate-pulse">
+                    <td className="px-6 py-4.5"><div className="w-4 h-4 bg-gray-200 rounded" /></td>
                     <td className="px-6 py-4.5"><div className="h-4 bg-gray-200 rounded w-28" /></td>
                     <td className="px-6 py-4.5"><div className="h-3 bg-gray-200 rounded w-36" /></td>
                     <td className="px-6 py-4.5"><div className="h-3 bg-gray-200 rounded w-24" /></td>
                     <td className="px-6 py-4.5"><div className="h-3 bg-gray-200 rounded w-20" /></td>
                     <td className="px-6 py-4.5"><div className="h-5 bg-gray-200 rounded-full w-16" /></td>
+                    <td className="px-6 py-4.5"><div className="h-5 bg-gray-200 rounded-full w-14" /></td>
                     <td className="px-6 py-4.5"><div className="h-5 bg-gray-200 rounded-full w-14" /></td>
                     <td className="px-6 py-4.5 text-right flex justify-end gap-2"><div className="h-8 bg-gray-200 rounded-lg w-14" /><div className="h-8 bg-gray-200 rounded-lg w-24" /></td>
                   </tr>
@@ -447,11 +792,20 @@ const Candidates: React.FC = () => {
             <table className="w-full text-left border-collapse">
               <thead>
                 <tr className="bg-brand-bg/40 border-b border-brand-border">
-                  <th className="px-6 py-4.5 text-xs font-bold text-gray-500 uppercase tracking-wider font-jakarta">Candidate Name</th>
+                  <th className="px-6 py-4.5 w-10">
+                    <input
+                      type="checkbox"
+                      onChange={handleSelectAll}
+                      checked={paginatedCandidates.length > 0 && paginatedCandidates.every(c => selectedEmails.has(c.email))}
+                      className="rounded border-gray-300 text-[#6FAF45] focus:ring-[#6FAF45] w-4 h-4 cursor-pointer"
+                    />
+                  </th>
+                  <th className="px-6 py-4.5 text-left">{renderSortHeader('Candidate Name', 'candidateName')}</th>
                   <th className="px-6 py-4.5 text-xs font-bold text-gray-500 uppercase tracking-wider font-jakarta">Email</th>
                   <th className="px-6 py-4.5 text-xs font-bold text-gray-500 uppercase tracking-wider font-jakarta">Role</th>
-                  <th className="px-6 py-4.5 text-xs font-bold text-gray-500 uppercase tracking-wider font-jakarta">Joining Date</th>
-                  <th className="px-6 py-4.5 text-xs font-bold text-gray-500 uppercase tracking-wider font-jakarta">Status</th>
+                  <th className="px-6 py-4.5 text-left">{renderSortHeader('Joining Date', 'joiningDate')}</th>
+                  <th className="px-6 py-4.5 text-left">{renderSortHeader('Status', 'status')}</th>
+                  <th className="px-6 py-4.5 text-left">{renderSortHeader('Source', 'source')}</th>
                   <th className="px-6 py-4.5 text-xs font-bold text-gray-500 uppercase tracking-wider font-jakarta">Email Status</th>
                   <th className="px-6 py-4.5 text-xs font-bold text-gray-500 uppercase tracking-wider text-right font-jakarta">Actions</th>
                 </tr>
@@ -459,6 +813,14 @@ const Candidates: React.FC = () => {
               <tbody className="divide-y divide-brand-border">
                 {paginatedCandidates.map((candidate, idx) => (
                   <tr key={`${candidate.email}-${candidate.joiningDate}-${idx}`} className="hover:bg-brand-light/20 hover:translate-x-0.5 transition-all duration-200">
+                    <td className="px-6 py-4 whitespace-nowrap">
+                      <input
+                        type="checkbox"
+                        checked={selectedEmails.has(candidate.email)}
+                        onChange={() => handleSelectRow(candidate.email)}
+                        className="rounded border-gray-300 text-[#6FAF45] focus:ring-[#6FAF45] w-4 h-4 cursor-pointer"
+                      />
+                    </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm font-bold text-brand-text font-jakarta">{candidate.candidateName}</td>
                     <td className="px-6 py-4 whitespace-nowrap text-xs text-gray-500">{candidate.email}</td>
                     <td className="px-6 py-4 whitespace-nowrap text-xs font-semibold text-gray-600">{candidate.role}</td>
@@ -470,19 +832,26 @@ const Candidates: React.FC = () => {
                       }) : 'N/A'}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap">
-                      {/* Dropdown — Styled like a Google Sheets colored chip, acts as the sole status indicator */}
                       <select
-                        value={candidate.status}
+                        value={candidate.status ?? ""}
                         onChange={e => {
                           const newStatus = e.target.value;
-                          const updatedCandidates = candidates.map(c =>
-                            c.email === candidate.email ? { ...c, status: newStatus } : c
-                          );
-                          setCandidates(updatedCandidates);
+                          console.log('Candidates.tsx onChange: Selected status =', newStatus, 'for candidate =', candidate.email);
                           updateCandidateStatus(candidate.email, newStatus)
-                            .then(() => {
-                              showToast(`Status updated to ${newStatus}`, 'success');
-                              fetchCandidatesData(true);
+                            .then((res) => {
+                              console.log('Candidates.tsx onChange: updateCandidateStatus response =', res);
+                              if (res && res.success) {
+                                const updatedCandidates = candidates.map(c =>
+                                  c.email === candidate.email ? { ...c, status: newStatus } : c
+                                );
+                                setCandidates(updatedCandidates);
+                                showToast(`Status updated to ${newStatus}`, 'success');
+                                fetchCandidatesData(true);
+                                window.dispatchEvent(new Event('candidate-updated'));
+                              } else {
+                                showToast(res?.message || 'Failed to update status', 'error');
+                                fetchCandidatesData(true);
+                              }
                             })
                             .catch(err => {
                               console.error('Status update failed', err);
@@ -495,11 +864,13 @@ const Candidates: React.FC = () => {
                         {SHEET_STATUS_OPTIONS.map(opt => (
                           <option key={opt} value={opt} className="bg-white text-gray-800 font-semibold text-xs">{opt}</option>
                         ))}
-                        {/* If the sheet has a value not in our list, keep it selectable */}
-                        {!SHEET_STATUS_OPTIONS.includes(candidate.status as any) && candidate.status && (
-                          <option value={candidate.status} className="bg-white text-gray-800 font-semibold text-xs">{candidate.status}</option>
-                        )}
                       </select>
+                    </td>
+
+                    <td className="px-6 py-4 whitespace-nowrap">
+                      <span className={`text-[10px] font-extrabold px-2.5 py-0.5 rounded-full uppercase border ${getSourceBadgeClass(candidate.source || 'Website')}`}>
+                        {candidate.source || 'Website'}
+                      </span>
                     </td>
 
                     <td className="px-6 py-4 whitespace-nowrap">

@@ -2,7 +2,7 @@ import React from 'react';
 import Modal from './ui/Modal';
 import Button from './ui/Button';
 import type { Candidate } from '../services/googleAppsScript';
-import { Mail, Briefcase, Calendar, CheckSquare, Send, XCircle, Clock, Check } from 'lucide-react';
+import { Mail, Briefcase, Calendar, CheckSquare, Send, XCircle, Clock, Check, Compass, Eye, FileText, ExternalLink } from 'lucide-react';
 
 interface CandidateDetailsModalProps {
   isOpen: boolean;
@@ -15,16 +15,33 @@ interface CandidateDetailsModalProps {
 // Returns badge classes for each candidate status
 const getStatusBadgeClass = (status: string) => {
   switch (status) {
-    case 'Selected':
-      return 'bg-emerald-50 text-emerald-700 border-emerald-100';
     case 'Interviewing':
-      return 'bg-blue-50 text-blue-700 border-blue-100';
-    case 'On Hold':
-      return 'bg-amber-50 text-amber-700 border-amber-100';
+      return 'bg-sky-50 text-sky-700 border-sky-100';
+    case 'Selected':
+      return 'bg-[#EDF9E8] text-[#2D6A2D] border-[#D7F1C8]';
     case 'Rejected':
-      return 'bg-red-50 text-red-700 border-red-100';
+      return 'bg-[#FFF5F5] text-[#C92A2A] border-[#FFC9C9]';
+    case 'On Hold':
+      return 'bg-[#FFFBEB] text-[#92400E] border-[#FDE68A]';
     default:
-      return 'bg-gray-100 text-gray-600 border-gray-200';
+      return 'bg-[#F4F7F5] text-gray-500 border-[#E3ECE6]';
+  }
+};
+
+const getSourceBadgeClass = (source?: string) => {
+  switch (source) {
+    case 'LinkedIn':
+      return 'bg-sky-50 text-sky-700 border-sky-100';
+    case 'Career Page':
+      return 'bg-teal-50 text-teal-700 border-teal-100';
+    case 'Referral':
+      return 'bg-purple-50 text-purple-700 border-purple-100';
+    case 'Website':
+      return 'bg-blue-50 text-blue-700 border-blue-100';
+    case 'Manual Entry':
+      return 'bg-orange-50 text-orange-700 border-orange-100';
+    default:
+      return 'bg-gray-50 text-gray-600 border-gray-100';
   }
 };
 
@@ -35,6 +52,12 @@ const CandidateDetailsModal: React.FC<CandidateDetailsModalProps> = ({
   onSendLetter,
   onSendRejection
 }) => {
+  const [showResume, setShowResume] = React.useState(false);
+
+  React.useEffect(() => {
+    setShowResume(false);
+  }, [candidate]);
+
   if (!candidate) return null;
 
   // Extract initials for the profile avatar
@@ -200,6 +223,55 @@ const CandidateDetailsModal: React.FC<CandidateDetailsModalProps> = ({
               </span>
             </div>
           </div>
+
+          {/* Candidate Source Card */}
+          <div className="bg-white border border-brand-border/60 rounded-xl p-4 flex gap-3 shadow-sm hover:border-brand-light/35 transition-colors duration-250">
+            <Compass className="w-5 h-5 text-brand shrink-0 mt-0.5" />
+            <div className="space-y-0.5">
+              <span className="text-[10px] text-gray-400 font-semibold uppercase tracking-wider block">Candidate Source</span>
+              <span className={`inline-flex text-[10px] font-bold px-2.5 py-0.5 rounded-full uppercase mt-1 border ${getSourceBadgeClass(candidate.source)}`}>
+                {candidate.source || 'Website'}
+              </span>
+            </div>
+          </div>
+
+          {/* Candidate Resume Card */}
+          {candidate.resumeFileId && (
+            <div className="bg-white border border-brand-border/60 rounded-xl p-4 flex gap-3 shadow-sm hover:border-brand-light/35 transition-colors duration-250 md:col-span-2">
+              <FileText className="w-5 h-5 text-brand shrink-0 mt-0.5" />
+              <div className="space-y-2 w-full">
+                <span className="text-[10px] text-gray-400 font-semibold uppercase tracking-wider block">Candidate Resume</span>
+                <div className="flex flex-wrap gap-2.5">
+                  <button
+                    onClick={() => setShowResume(!showResume)}
+                    className="inline-flex items-center gap-1.5 px-3.5 py-2 text-xs font-bold rounded-xl border border-brand-border bg-white text-gray-700 hover:bg-[#EDF9E8]/40 hover:text-brand transition-all duration-200 active:scale-[0.98]"
+                  >
+                    <Eye className="w-3.5 h-3.5" />
+                    {showResume ? 'Hide Resume Preview' : 'View Resume'}
+                  </button>
+                  <a
+                    href={`https://drive.google.com/file/d/${candidate.resumeFileId}/view?usp=drivesdk`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-1.5 px-3.5 py-2 text-xs font-bold rounded-xl border border-brand-border bg-white text-gray-700 hover:bg-[#EDF9E8]/40 hover:text-brand transition-all duration-200 active:scale-[0.98]"
+                  >
+                    <ExternalLink className="w-3.5 h-3.5" />
+                    Open Drive File
+                  </a>
+                </div>
+                {showResume && (
+                  <div className="mt-3 border border-brand-border rounded-xl overflow-hidden bg-gray-50 h-[450px] w-full animate-fade-in">
+                    <iframe
+                      src={`https://drive.google.com/file/d/${candidate.resumeFileId}/preview`}
+                      className="w-full h-full border-0"
+                      title="Resume Viewer"
+                      allow="autoplay"
+                    />
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
         </div>
 
         {/* Action Buttons */}

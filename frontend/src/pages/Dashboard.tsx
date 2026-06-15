@@ -1,13 +1,16 @@
 import React, { useEffect, useState } from 'react';
-import { getCandidates, type Candidate } from '../services/googleAppsScript';
-import { Users, Clock, Send, UserCheck, ArrowRight } from 'lucide-react';
+import { getCandidates, getDepartmentCandidates, type Candidate } from '../services/googleAppsScript';
+import { Users, Clock, Send, UserCheck, ArrowRight, Building2 } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import FlowingConnectionLines from '../components/ui/FlowingConnectionLines';
+import { DEPARTMENTS } from '../config/departments';
 
 const Dashboard: React.FC = () => {
   const [candidates, setCandidates] = useState<Candidate[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadingDepts, setLoadingDepts] = useState(true);
+  const [deptStats, setDeptStats] = useState<Record<string, { total: number; selected: number; interviewing: number; onHold: number; rejected: number }>>({});
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
   const fetchDashboardData = async () => {
@@ -16,11 +19,31 @@ const Dashboard: React.FC = () => {
       setErrorMsg(null);
       const data = await getCandidates();
       setCandidates(data);
+
+      setLoadingDepts(true);
+      const statsMap: Record<string, { total: number; selected: number; interviewing: number; onHold: number; rejected: number }> = {};
+      for (const dept of DEPARTMENTS) {
+        try {
+          const deptCandidates = await getDepartmentCandidates(dept.sheetName);
+          statsMap[dept.id] = {
+            total: deptCandidates.length,
+            selected: deptCandidates.filter(c => c.status === 'Selected').length,
+            interviewing: deptCandidates.filter(c => c.status === 'Interviewing').length,
+            onHold: deptCandidates.filter(c => c.status === 'On Hold').length,
+            rejected: deptCandidates.filter(c => c.status === 'Rejected').length
+          };
+        } catch (deptErr) {
+          console.error(`Error loading stats for ${dept.name}:`, deptErr);
+          statsMap[dept.id] = { total: 0, selected: 0, interviewing: 0, onHold: 0, rejected: 0 };
+        }
+      }
+      setDeptStats(statsMap);
     } catch (err: any) {
       console.error('Failed to load dashboard statistics:', err);
       setErrorMsg('Unable to connect to Google Sheets');
     } finally {
       setLoading(false);
+      setLoadingDepts(false);
     }
   };
 
@@ -185,6 +208,77 @@ const Dashboard: React.FC = () => {
           })}
         </div>
       )}
+
+      {/* Department Cards Grid */}
+      <div className="space-y-4">
+        <h2 className="text-base font-bold text-brand-text font-jakarta">
+          Departments Directory
+        </h2>
+        {loadingDepts ? (
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+            {[...Array(3)].map((_, i) => (
+              <div key={i} className="bg-white border border-brand-border p-6 rounded-2xl shadow-sm h-40 animate-pulse flex flex-col justify-between" />
+            ))}
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+            {DEPARTMENTS.map((dept, idx) => {
+              const stats = deptStats[dept.id] || { total: 0, selected: 0, rejected: 0, maybe: 0 };
+              return (
+                <Link to={`/departments/${dept.id}`} key={dept.id}>
+                  <motion.div
+                    initial={{ opacity: 0, y: 12 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ duration: 0.3, delay: idx * 0.05 }}
+                    whileHover={{ y: -4, scale: 1.01 }}
+                    className="bg-white border border-brand-border p-5 rounded-2xl shadow-sm hover:shadow-[0_20px_40px_rgba(168,214,114,0.15)] hover:border-brand-accent/30 transition-all duration-300 flex flex-col justify-between h-full select-none"
+                  >
+                    <div className="flex justify-between items-start">
+                      <div>
+                        <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider font-jakarta">
+                          ATS Department
+                        </span>
+                        <h4 className="text-base font-extrabold text-brand-text mt-1 font-jakarta truncate max-w-[160px]">
+                          {dept.name}
+                        </h4>
+                      </div>
+                      <div className="w-9 h-9 rounded-xl flex items-center justify-center bg-[#EDF9E8] text-[#6FAF45] border border-[#D7F1C8]">
+                        <Building2 className="w-4.5 h-4.5" />
+                      </div>
+                    </div>
+
+                    <div className="mt-4 pt-4 border-t border-brand-border/60">
+                      <div className="flex items-center justify-between text-xs mb-3 font-semibold text-gray-600">
+                        <span>Total Candidates</span>
+                        <span className="text-sm font-extrabold text-[#1B4332]">{stats.total}</span>
+                      </div>
+                      
+                      <div className="grid grid-cols-4 gap-1.5 pt-1">
+                        <div className="bg-[#EDF9E8]/80 text-[#2D6A2D] border border-[#D7F1C8]/60 rounded-xl px-1 py-1.5 text-center flex flex-col items-center">
+                          <span className="text-[8px] font-bold uppercase tracking-wide opacity-75">Selected</span>
+                          <span className="text-xs font-extrabold mt-0.5">{stats.selected}</span>
+                        </div>
+                        <div className="bg-sky-50/80 text-sky-700 border border-sky-100/60 rounded-xl px-1 py-1.5 text-center flex flex-col items-center">
+                          <span className="text-[8px] font-bold uppercase tracking-wide opacity-75">Interview</span>
+                          <span className="text-xs font-extrabold mt-0.5">{stats.interviewing}</span>
+                        </div>
+                        <div className="bg-[#FFFBEB]/80 text-[#92400E] border border-[#FDE68A]/60 rounded-xl px-1 py-1.5 text-center flex flex-col items-center">
+                          <span className="text-[8px] font-bold uppercase tracking-wide opacity-75">On Hold</span>
+                          <span className="text-xs font-extrabold mt-0.5">{stats.onHold}</span>
+                        </div>
+                        <div className="bg-[#FFF5F5]/80 text-[#C92A2A] border border-[#FFC9C9]/60 rounded-xl px-1 py-1.5 text-center flex flex-col items-center">
+                          <span className="text-[8px] font-bold uppercase tracking-wide opacity-75">Rejected</span>
+                          <span className="text-xs font-extrabold mt-0.5">{stats.rejected}</span>
+                        </div>
+                      </div>
+                    </div>
+                  </motion.div>
+                </Link>
+              );
+            })}
+          </div>
+        )}
+      </div>
 
       {/* Recent Activity Section */}
       <div className="grid grid-cols-1 gap-8">

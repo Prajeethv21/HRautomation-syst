@@ -4,8 +4,11 @@ import {
   fetchCandidateByEmail,
   sendJoiningLetterWorkflow,
   sendRejectionEmailWorkflow,
-  updateCandidateStatus
+  updateCandidateStatus,
+  fetchDepartmentCandidates,
+  triggerResumeProcessing
 } from '../services/candidateService.js';
+import { ingestCandidate } from '../services/candidateSourceService.js';
 
 const router = express.Router();
 
@@ -89,6 +92,39 @@ router.get('/candidates/preview', async (req, res) => {
       candidate,
       previewText
     });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// --- Departments & Candidate Ingestion Routes ---
+router.get('/departments/:sheetName', async (req, res) => {
+  try {
+    const { sheetName } = req.params;
+    const { data } = await fetchDepartmentCandidates(sheetName);
+    res.json({ success: true, candidates: data });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+router.post('/candidates', async (req, res) => {
+  try {
+    const { candidate, source } = req.body;
+    if (!candidate) {
+      return res.status(400).json({ success: false, error: 'Candidate data is required' });
+    }
+    const result = await ingestCandidate(candidate, source || 'Other');
+    res.json(result);
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+router.post('/resumes/process', async (req, res) => {
+  try {
+    const result = await triggerResumeProcessing();
+    res.json(result);
   } catch (error) {
     res.status(500).json({ success: false, error: error.message });
   }

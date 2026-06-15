@@ -19,6 +19,16 @@ const SHEET_NAME = "Candidates";
 const TEMPLATE_ID = "1T7cl_UOi8ojl5tR99gplQCJuNARs4hD5kTZw9NXT3tw";
 const LOGO_FILE_ID = "1LimR9KAN-1FteqjlNR-h_mfAuy3kqRHR10hMplcf67iLGN1SUHoy5PYReXQoj6FIV";
 
+// Google Drive folder ID where resumes are uploaded
+const RESUME_FOLDER_ID = "12345_PLACEHOLDER_FOLDER_ID_67890";
+
+// Configure Department Sheet Mapping
+const ROLE_TO_SHEET_MAP = {
+  "Sustainability": "Sustainability",
+  "AI Automation Engineer": "AI Automation Engineer",
+  "Web Developer": "Web Developer"
+};
+
 // --- ORIGINAL AUTOMATION FUNCTIONS ---
 
 function getPendingCandidates() {
@@ -96,33 +106,33 @@ function sendJoiningEmail(candidate, pdfFile) {
   );
 
   const htmlBody = `
-<div style="font-family:'Trebuchet MS',sans-serif;font-size:14px;line-height:1.7;color:#333;max-width:680px;">
-  <p>Dear <b>${candidate.candidateName}</b>,</p>
-  <p>
-    We are delighted to inform you that you have been selected
-    to join <b>Deepwoods Green Initiatives Pvt. Ltd.</b>
-    as <b>${candidate.role}</b>.
-  </p>
-  <p>
-    Your joining date is <b>${formattedJoiningDate}</b>.
-  </p>
-  <p>
-    Please find your joining letter attached to this email.
-  </p>
-  <p>
-    We look forward to having you on the team.
-  </p>
-  <p>
-    Warm Regards,<br>
-    <b>Deepwoods Green Initiatives Pvt. Ltd.</b>
-  </p>
-  <img src="cid:deepwoodsLogo" width="300">
-  <hr>
-  <p style="font-size:12px;color:#666;">
-    we@deepwoodsgreen.com | +91 98413 39293
-  </p>
-</div>
-`;
+  <div style="font-family:'Trebuchet MS',sans-serif;font-size:14px;line-height:1.7;color:#333;max-width:680px;">
+    <p>Dear <b>${candidate.candidateName}</b>,</p>
+    <p>
+      We are delighted to inform you that you have been selected
+      to join <b>Deepwoods Green Initiatives Pvt. Ltd.</b>
+      as <b>${candidate.role}</b>.
+    </p>
+    <p>
+      Your joining date is <b>${formattedJoiningDate}</b>.
+    </p>
+    <p>
+      Please find your joining letter attached to this email.
+    </p>
+    <p>
+      We look forward to having you on the team.
+    </p>
+    <p>
+      Warm Regards,<br>
+      <b>Deepwoods Green Initiatives Pvt. Ltd.</b>
+    </p>
+    <img src="cid:deepwoodsLogo" width="300">
+    <hr>
+    <p style="font-size:12px;color:#666;">
+      we@deepwoodsgreen.com | +91 98413 39293
+    </p>
+  </div>
+  `;
 
   Logger.log("About to send email to: " + candidate.email);
   try {
@@ -138,7 +148,7 @@ function sendJoiningEmail(candidate, pdfFile) {
         }
       }
     );
-  } catch(err) {
+  } catch (err) {
     Logger.log("GMAIL ERROR: " + err.toString());
     throw err;
   }
@@ -219,6 +229,25 @@ function getSheet(sheetId) {
   }
 }
 
+function getSheetByName(sheetId, name) {
+  const targetName = name || SHEET_NAME;
+  if (sheetId) {
+    try {
+      return SpreadsheetApp.openById(sheetId).getSheetByName(targetName);
+    } catch (e) {
+      // Fallback
+    }
+  }
+  try {
+    return SpreadsheetApp.getActiveSpreadsheet().getSheetByName(targetName);
+  } catch (e) {
+    if (sheetId) {
+      return SpreadsheetApp.openById(sheetId).getSheets()[0];
+    }
+    throw e;
+  }
+}
+
 // CORS pre-flight handler for POST requests
 function doOptions(e) {
   return ContentService.createTextOutput("")
@@ -237,6 +266,15 @@ function doGet(e) {
     return handleGetCandidates(sheetId);
   }
 
+  if (action === "getDepartmentCandidates") {
+    var sheetName = e.parameter.sheetName;
+    return handleGetDepartmentCandidates(sheetId, sheetName);
+  }
+
+  if (action === "processResumes") {
+    return handleProcessResumes(sheetId);
+  }
+
   return makeJsonResponse({ success: false, message: "Unknown GET action" }, 400);
 }
 
@@ -252,7 +290,7 @@ function doPost(e) {
     var data = JSON.parse(e.postData.contents);
     var action = data.action;
     var sheetId = data.sheetId;
-    var candidateEmail = data.candidateEmail;
+    var candidateEmail = data.candidateEmail || data.email;
 
     if (action === "sendJoiningLetter") {
       return handleSendJoiningLetter(sheetId, candidateEmail);
@@ -265,6 +303,15 @@ function doPost(e) {
     if (action === "updateCandidateStatus") {
       var newStatus = data.status;
       return handleUpdateCandidateStatus(sheetId, candidateEmail, newStatus);
+    }
+
+    if (action === "createCandidate") {
+      var candidate = data.candidate;
+      return handleCreateCandidate(sheetId, candidate);
+    }
+
+    if (action === "processResumes") {
+      return handleProcessResumes(sheetId);
     }
 
     return makeJsonResponse({ success: false, message: "Unknown POST action" }, 400);
@@ -297,8 +344,10 @@ function handleGetCandidates(sheetId) {
         candidate.joiningDate = rawDate ? rawDate.toString().trim() : "";
       }
 
-      candidate.status = row[4] ? row[4].toString().trim() : "Pending";
+      candidate.status = row[4] ? row[4].toString().trim() : "Interviewing";
       candidate.emailStatus = row[5] ? row[5].toString().trim() : "Pending";
+      candidate.source = row[6] ? row[6].toString().trim() : "Other";
+      candidate.resumeFileId = row[7] ? row[7].toString().trim() : "";
 
       // Avoid pushing empty rows
       if (candidate.candidateName || candidate.email) {
@@ -376,6 +425,11 @@ function handleSendJoiningLetter(sheetId, candidateEmail) {
 
 // Response output wrapper with CORS headers
 function makeJsonResponse(data, status) {
+  try {
+    data.logs = Logger.getLog();
+  } catch (e) {
+    // ignore
+  }
   var output = ContentService.createTextOutput(JSON.stringify(data))
     .setMimeType(ContentService.MimeType.JSON);
 
@@ -423,37 +477,37 @@ function handleSendRejectionEmail(sheetId, candidateEmail) {
     const subject = "Application Update \u2013 Deepwoods Green Initiatives Pvt. Ltd.";
 
     const htmlBody = `
-<div style="font-family:'Trebuchet MS',sans-serif;font-size:14px;line-height:1.7;color:#333;max-width:680px;">
-  <p>Date: ${today}</p>
+  <div style="font-family:'Trebuchet MS',sans-serif;font-size:14px;line-height:1.7;color:#333;max-width:680px;">
+    <p>Date: ${today}</p>
 
-  <p>Dear <b>${candidate.candidateName}</b>,</p>
+    <p>Dear <b>${candidate.candidateName}</b>,</p>
 
-  <p>
-    Thank you for your interest in <b>Deepwoods Green Initiatives Pvt. Ltd.</b> and for participating in our recruitment process for the position of <b>${candidate.role}</b>.
-  </p>
+    <p>
+      Thank you for your interest in <b>Deepwoods Green Initiatives Pvt. Ltd.</b> and for participating in our recruitment process for the position of <b>${candidate.role}</b>.
+    </p>
 
-  <p>
-    After careful review, we regret to inform you that you have not been selected for this opportunity. We sincerely appreciate the time and effort you invested throughout the selection process.
-  </p>
+    <p>
+      After careful review, we regret to inform you that you have not been selected for this opportunity. We sincerely appreciate the time and effort you invested throughout the selection process.
+    </p>
 
-  <p>
-    We wish you success in your future endeavors and encourage you to apply for suitable opportunities with us in the future.
-  </p>
+    <p>
+      We wish you success in your future endeavors and encourage you to apply for suitable opportunities with us in the future.
+    </p>
 
-  <p>
-    Sustainably Yours&reg;,<br>
-    <b>Deepwoods Green Initiatives Pvt. Ltd.</b>
-  </p>
+    <p>
+      Sustainably Yours&reg;,<br>
+      <b>Deepwoods Green Initiatives Pvt. Ltd.</b>
+    </p>
 
-  <img src="cid:deepwoodsLogo" width="300">
+    <img src="cid:deepwoodsLogo" width="300">
 
-  <hr>
+    <hr>
 
-  <p style="font-size:12px;color:#666;">
-    we@deepwoodsgreen.com | +91 98413 39293
-  </p>
-</div>
-`;
+    <p style="font-size:12px;color:#666;">
+      we@deepwoodsgreen.com | +91 98413 39293
+    </p>
+  </div>
+  `;
 
     Logger.log("About to send email to: " + candidate.email);
     try {
@@ -466,7 +520,7 @@ function handleSendRejectionEmail(sheetId, candidateEmail) {
           inlineImages: { deepwoodsLogo: logoBlob }
         }
       );
-    } catch(err) {
+    } catch (err) {
       Logger.log("GMAIL ERROR: " + err.toString());
       throw err;
     }
@@ -489,7 +543,7 @@ function handleSendRejectionEmail(sheetId, candidateEmail) {
   }
 }
 
-// REST Endpoint Helper: Update candidate status (column E) by email
+// REST Endpoint Helper: Update candidate status (column E in Candidates, column K in Department) by email
 function handleUpdateCandidateStatus(sheetId, candidateEmail, newStatus) {
   Logger.log('=== handleUpdateCandidateStatus CALLED ===');
   Logger.log('candidateEmail: ' + candidateEmail);
@@ -504,61 +558,77 @@ function handleUpdateCandidateStatus(sheetId, candidateEmail, newStatus) {
       return makeJsonResponse({ success: false, message: "status is required" }, 400);
     }
 
-    var allowedStatuses = ['Selected', 'Not Selected', 'Maybe'];
+    var allowedStatuses = ['Selected', 'Interviewing', 'On Hold', 'Rejected'];
     if (allowedStatuses.indexOf(newStatus) === -1) {
       Logger.log('INVALID status value: ' + newStatus);
       return makeJsonResponse({ success: false, message: "Invalid status value. Allowed: " + allowedStatuses.join(', ') }, 400);
     }
 
-    const sheet = getSheet(sheetId);
-    const data = sheet.getDataRange().getValues();
-    let rowIndex = -1;
+    const masterSheet = getSheetByName(sheetId, "Candidates");
+    const masterData = masterSheet.getDataRange().getValues();
+    let masterRowIndex = -1;
+    let candidateRole = "";
 
-    // Search column B (index 1) for matching email
-    for (let i = 1; i < data.length; i++) {
-      if (data[i][1] && data[i][1].toString().trim().toLowerCase() === candidateEmail.trim().toLowerCase()) {
-        rowIndex = i + 1; // Convert 0-based array index to 1-based spreadsheet row
-        Logger.log('Found candidate at array index ' + i + ' → spreadsheet row ' + rowIndex);
-        Logger.log('Candidate name: ' + data[i][0]);
-        Logger.log('Current status (col E / col 5): ' + data[i][4]);
+    // 1. Update Candidates master sheet
+    for (let i = 1; i < masterData.length; i++) {
+      if (masterData[i][1] && masterData[i][1].toString().trim().toLowerCase() === candidateEmail.trim().toLowerCase()) {
+        masterRowIndex = i + 1; // Convert 0-based to 1-based row index
+        candidateRole = masterData[i][2] ? masterData[i][2].toString().trim() : "";
         break;
       }
     }
 
-    if (rowIndex === -1) {
+    if (masterRowIndex === -1) {
       Logger.log('FAILED: candidate not found for email=' + candidateEmail);
       return makeJsonResponse({ success: false, message: "Candidate not found: " + candidateEmail }, 404);
     }
 
-    // SAFETY: only write to column E (column number 5)
-    // Column A=1, B=2, C=3, D=4(Joining Date), E=5(Status), F=6(Email Status)
-    var STATUS_COLUMN = 5; // Column E = Status
-    Logger.log('Writing to: Row=' + rowIndex + ', Column=' + STATUS_COLUMN + ' (Column E = Status)');
-    Logger.log('Value to write: ' + newStatus);
-
-    var statusCell = sheet.getRange(rowIndex, STATUS_COLUMN);
-
-    // ── Dropdown chip preservation ──────────────────────────────────────────
-    // Verify the target cell already contains a dropdown validation before updating.
-    Logger.log('Current validation:');
-    Logger.log(statusCell.getDataValidation());
-
-    var currentValidation = statusCell.getDataValidation();
-    if (currentValidation === null) {
-      Logger.log('Validation is missing. Recreating dropdown validation rule.');
-      const rule = SpreadsheetApp.newDataValidation()
-        .requireValueInList(
-          ['Selected', 'Not Selected', 'Maybe'],
-          true
-        )
-        .build();
-      statusCell.setDataValidation(rule);
-    }
-
-    // Update only the value to preserve existing validation, dropdown chip, and formatting
+    // Update status cell in master Candidates sheet (Column E)
+    var statusCell = masterSheet.getRange(masterRowIndex, 5);
+    Logger.log('=== BEFORE UPDATE ===');
+    Logger.log('Candidate Name: ' + (masterData[masterRowIndex-1][0]));
+    Logger.log('Row Number: ' + masterRowIndex);
+    Logger.log('Cell A1: ' + statusCell.getA1Notation());
+    Logger.log('Validation before: ' + (statusCell.getDataValidation() ? statusCell.getDataValidation().getCriteriaType().toString() : 'None'));
+    
     statusCell.setValue(newStatus);
+    
+    Logger.log('=== AFTER UPDATE ===');
+    Logger.log('Validation after: ' + (statusCell.getDataValidation() ? statusCell.getDataValidation().getCriteriaType().toString() : 'None'));
+    Logger.log('SUCCESS: Updated master sheet status at row ' + masterRowIndex);
 
-    Logger.log('SUCCESS: Status updated. Row=' + rowIndex + ', Column=E(5), Value=' + newStatus);
+    // 2. Update matching Department sheet
+    const deptSheetName = ROLE_TO_SHEET_MAP[candidateRole] || candidateRole;
+    if (deptSheetName) {
+      const deptSheet = getSheetByName(sheetId, deptSheetName);
+      if (deptSheet) {
+        const deptData = deptSheet.getDataRange().getValues();
+        let deptRowIndex = -1;
+
+        for (let j = 1; j < deptData.length; j++) {
+          if (deptData[j][1] && deptData[j][1].toString().trim().toLowerCase() === candidateEmail.trim().toLowerCase()) {
+            deptRowIndex = j + 1;
+            break;
+          }
+        }
+
+        if (deptRowIndex !== -1) {
+          // Status column in Department sheet is at index 10 (Column K, 11th column)
+          var deptStatusCell = deptSheet.getRange(deptRowIndex, 11);
+          Logger.log('=== BEFORE DEPT UPDATE ===');
+          Logger.log('Cell A1: ' + deptStatusCell.getA1Notation());
+          Logger.log('Validation before: ' + (deptStatusCell.getDataValidation() ? deptStatusCell.getDataValidation().getCriteriaType().toString() : 'None'));
+          
+          deptStatusCell.setValue(newStatus);
+          
+          Logger.log('=== AFTER DEPT UPDATE ===');
+          Logger.log('Validation after: ' + (deptStatusCell.getDataValidation() ? deptStatusCell.getDataValidation().getCriteriaType().toString() : 'None'));
+          Logger.log('SUCCESS: Updated department sheet status at row ' + deptRowIndex + ' in ' + deptSheetName);
+        } else {
+          Logger.log('WARN: Candidate not found in department sheet ' + deptSheetName);
+        }
+      }
+    }
 
     return makeJsonResponse({
       success: true,
@@ -569,4 +639,492 @@ function handleUpdateCandidateStatus(sheetId, candidateEmail, newStatus) {
     Logger.log('handleUpdateCandidateStatus FAILED: ' + error.toString());
     return makeJsonResponse({ success: false, message: "Status update failed: " + error.toString() }, 500);
   }
+}
+
+// REST Endpoint Helper: Retrieve department candidates
+function handleGetDepartmentCandidates(sheetId, sheetName) {
+  try {
+    if (!sheetName) {
+      return makeJsonResponse({ success: false, message: "sheetName is required" }, 400);
+    }
+
+    const sheet = getSheetByName(sheetId, sheetName);
+    if (!sheet) {
+      // Return empty array if sheet does not exist yet (handles dynamic addition gracefully)
+      return makeJsonResponse({ success: true, data: [] }, 200);
+    }
+
+    const lastRow = sheet.getLastRow();
+    if (lastRow <= 1) {
+      return makeJsonResponse({ success: true, data: [] }, 200);
+    }
+
+    const data = sheet.getDataRange().getValues();
+    const candidates = [];
+
+    // Columns: Candidate Name, Email, Phone Number, Work Experience, UG, PG, College, Location, LinkedIn, GitHub, Status, Source, Resume File ID
+    for (let i = 1; i < data.length; i++) {
+      const row = data[i];
+      const candidate = {};
+
+      candidate.candidateName = row[0] ? row[0].toString().trim() : "";
+      candidate.email = row[1] ? row[1].toString().trim() : "";
+      candidate.phoneNumber = row[2] ? row[2].toString().trim() : "";
+      candidate.workExperience = row[3] ? row[3].toString().trim() : "";
+      candidate.ug = row[4] ? row[4].toString().trim() : "";
+      candidate.pg = row[5] ? row[5].toString().trim() : "";
+      candidate.college = row[6] ? row[6].toString().trim() : "";
+      candidate.location = row[7] ? row[7].toString().trim() : "";
+      candidate.linkedin = row[8] ? row[8].toString().trim() : "";
+      candidate.github = row[9] ? row[9].toString().trim() : "";
+      candidate.status = row[10] ? row[10].toString().trim() : "Interviewing";
+      candidate.source = row[11] ? row[11].toString().trim() : "Website";
+      candidate.resumeFileId = row[12] ? row[12].toString().trim() : "";
+
+      if (candidate.candidateName || candidate.email) {
+        candidates.push(candidate);
+      }
+    }
+
+    return makeJsonResponse({ success: true, data: candidates }, 200);
+  } catch (error) {
+    return makeJsonResponse({ success: false, message: "Failed to read department sheet: " + error.toString() }, 500);
+  }
+}
+
+// REST Endpoint Helper: Ingest a candidate and auto-route them to the correct department
+function handleCreateCandidate(sheetId, candidate) {
+  try {
+    if (!candidate || !candidate.email || !candidate.name) {
+      return makeJsonResponse({ success: false, message: "Candidate name and email are required" }, 400);
+    }
+
+    const masterSheet = getSheetByName(sheetId, "Candidates");
+    const masterData = masterSheet.getDataRange().getValues();
+    let candidateExists = false;
+
+    // Check if candidate already exists in Candidates master sheet
+    for (let i = 1; i < masterData.length; i++) {
+      if (masterData[i][1] && masterData[i][1].toString().trim().toLowerCase() === candidate.email.trim().toLowerCase()) {
+        candidateExists = true;
+        break;
+      }
+    }
+
+    if (candidateExists) {
+      return makeJsonResponse({ success: false, message: "Candidate with email " + candidate.email + " already exists" }, 400);
+    }
+
+    // Pipeline statuses
+    var allowedStatuses = ['Selected', 'Interviewing', 'On Hold', 'Rejected'];
+
+    // 1. Add to Candidates master sheet
+    // Columns: Candidate Name, Email Address, Role Applied For, Joining Date, Status, Email Status, Source, Resume File ID
+    masterSheet.appendRow([
+      candidate.name,
+      candidate.email,
+      candidate.role || "",
+      candidate.joiningDate || "",
+      candidate.status || "Interviewing",
+      candidate.emailStatus || "Pending",
+      candidate.source || "Website",
+      candidate.resumeFileId || ""
+    ]);
+
+    // No per-row data validation added to maintain Google Sheets column-wide validation formatting
+
+    // 2. Add to Department sheet
+    const deptSheetName = ROLE_TO_SHEET_MAP[candidate.role] || candidate.role;
+    if (deptSheetName) {
+      let deptSheet = getSheetByName(sheetId, deptSheetName);
+      if (!deptSheet) {
+        // Create the department sheet dynamically if missing
+        const ss = sheetId ? SpreadsheetApp.openById(sheetId) : SpreadsheetApp.getActiveSpreadsheet();
+        deptSheet = ss.insertSheet(deptSheetName);
+        deptSheet.appendRow([
+          "Candidate Name",
+          "Email",
+          "Phone Number",
+          "Work Experience",
+          "UG",
+          "PG",
+          "College",
+          "Location",
+          "LinkedIn",
+          "GitHub",
+          "Status",
+          "Source",
+          "Resume File ID"
+        ]);
+      }
+
+      // Columns: Candidate Name, Email, Phone Number, Work Experience, UG, PG, College, Location, LinkedIn, GitHub, Status, Source, Resume File ID
+      deptSheet.appendRow([
+        candidate.name,
+        candidate.email,
+        candidate.phoneNumber || "",
+        candidate.workExperience || "",
+        candidate.ug || "",
+        candidate.pg || "",
+        candidate.college || "",
+        candidate.location || "",
+        candidate.linkedin || "",
+        candidate.github || "",
+        candidate.status || "Interviewing",
+        candidate.source || "Website",
+        candidate.resumeFileId || ""
+      ]);
+
+      // No per-row data validation added to maintain Google Sheets column-wide validation formatting
+    }
+
+    return makeJsonResponse({ success: true, message: "Candidate created and routed to " + deptSheetName }, 200);
+
+  } catch (error) {
+    return makeJsonResponse({ success: false, message: "Failed to create candidate: " + error.toString() }, 500);
+  }
+}
+
+// REST Endpoint Helper: Trigger Resume Scan of designated Google Drive folder
+function handleProcessResumes(sheetId) {
+  try {
+    const count = processIncomingResumes(sheetId);
+    return makeJsonResponse({ success: true, message: "Processed " + count + " new resumes." }, 200);
+  } catch (error) {
+    return makeJsonResponse({ success: false, message: "Failed to process resumes: " + error.toString() }, 500);
+  }
+}
+
+// Core parsing logic for resume uploads
+function processIncomingResumes(sheetId) {
+  if (!RESUME_FOLDER_ID || RESUME_FOLDER_ID === "12345_PLACEHOLDER_FOLDER_ID_67890") {
+    Logger.log("Resume uploads folder ID is not configured.");
+    return 0;
+  }
+
+  var folder = DriveApp.getFolderById(RESUME_FOLDER_ID);
+  var files = folder.getFiles();
+
+  // Track processed file IDs using a local Spreadsheet sheet for visibility and self-healing
+  var ss = sheetId ? SpreadsheetApp.openById(sheetId) : SpreadsheetApp.getActiveSpreadsheet();
+  var logSheet = ss.getSheetByName("ProcessedResumes");
+  if (!logSheet) {
+    logSheet = ss.insertSheet("ProcessedResumes");
+    logSheet.appendRow(["File ID", "Candidate Name", "Email", "Processed Date"]);
+  }
+
+  var processedLog = logSheet.getDataRange().getValues();
+  var processedIds = new Set();
+  for (var i = 1; i < processedLog.length; i++) {
+    if (processedLog[i][0]) {
+      processedIds.add(processedLog[i][0].toString().trim());
+    }
+  }
+
+  var processedCount = 0;
+
+  while (files.hasNext()) {
+    var file = files.next();
+    var fileId = file.getId();
+    var mimeType = file.getMimeType();
+
+    // Process only unprocessed PDF/DOCX files
+    if (processedIds.has(fileId)) {
+      continue;
+    }
+
+    var isPDF = mimeType === "application/pdf";
+    var isDOCX = mimeType === "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
+
+    if (isPDF || isDOCX) {
+      try {
+        Logger.log("Processing resume: " + file.getName());
+        var rawText = "";
+
+        if (isPDF) {
+          rawText = extractTextFromPDF(fileId);
+        } else if (isDOCX) {
+          rawText = extractTextFromDOCX(fileId);
+        }
+
+        if (rawText) {
+          var details = parseCandidateDetails(rawText);
+          details.resumeFileId = fileId;
+          details.source = "Manual Entry";
+          details.status = "Interviewing";
+          details.emailStatus = "Pending";
+
+          if (!details.name) {
+            details.name = file.getName().replace(/\.[^/.]+$/, ""); // fallback to filename without extension
+          }
+          if (!details.email) {
+            details.email = "no-email-found-" + fileId.substring(0, 6) + "@example.com";
+          }
+
+          // Append candidate and route to sheets
+          handleCreateCandidate(sheetId, details);
+
+          // Log processing to prevent double parsing
+          logSheet.appendRow([fileId, details.name, details.email, new Date()]);
+          processedCount++;
+        }
+      } catch (err) {
+        Logger.log("Error parsing " + file.getName() + ": " + err.toString());
+      }
+    }
+  }
+
+  return processedCount;
+}
+
+// Convert PDF to Google Doc temporarily via OCR, read text, and clean up
+function extractTextFromPDF(fileId) {
+  var file = DriveApp.getFileById(fileId);
+  var blob = file.getBlob();
+
+  var resource = {
+    title: "TempOCR_" + fileId,
+    mimeType: file.getBlob().getMimeType()
+  };
+
+  var tempFile = Drive.Files.insert(resource, blob, { ocr: true });
+  var tempDoc = DocumentApp.openById(tempFile.id);
+  var text = tempDoc.getBody().getText();
+
+  Drive.Files.remove(tempFile.id);
+  return text;
+}
+
+// Convert DOCX to Google Doc temporarily, read text, and clean up
+function extractTextFromDOCX(fileId) {
+  var file = DriveApp.getFileById(fileId);
+  var blob = file.getBlob();
+
+  var resource = {
+    title: "TempDOCX_" + fileId,
+    mimeType: MimeType.GOOGLE_DOCS
+  };
+
+  var tempFile = Drive.Files.insert(resource, blob);
+  var tempDoc = DocumentApp.openById(tempFile.id);
+  var text = tempDoc.getBody().getText();
+
+  Drive.Files.remove(tempFile.id);
+  return text;
+}
+
+// Regular expressions and scores mapping to parse resume details
+function parseCandidateDetails(text) {
+  var details = {
+    name: "",
+    email: "",
+    phoneNumber: "",
+    location: "",
+    college: "",
+    ug: "",
+    pg: "",
+    workExperience: "",
+    linkedin: "",
+    github: "",
+    role: "Sustainability" // default fallback
+  };
+
+  var lines = text.split('\n').map(function (line) { return line.trim(); }).filter(Boolean);
+
+  // Name Heuristic: Grab first non-header line
+  if (lines.length > 0) {
+    details.name = lines[0];
+    if (details.name.toLowerCase().indexOf("resume") !== -1 || details.name.toLowerCase().indexOf("cv") !== -1) {
+      if (lines.length > 1) {
+        details.name = lines[1];
+      }
+    }
+  }
+
+  // Email regex
+  var emailRegex = /[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/;
+  var emailMatch = text.match(emailRegex);
+  if (emailMatch) {
+    details.email = emailMatch[0];
+  }
+
+  // Phone regex
+  var phoneRegex = /(\+?\d{1,3}[-.\s]?)?\(?\d{3}\)?[-.\s]?\d{3}[-.\s]?\d{4}/;
+  var phoneMatch = text.match(phoneRegex);
+  if (phoneMatch) {
+    details.phoneNumber = phoneMatch[0];
+  }
+
+  // LinkedIn and GitHub regex
+  var linkedinRegex = /linkedin\.com\/in\/[a-zA-Z0-9_-]+/;
+  var linkedinMatch = text.match(linkedinRegex);
+  if (linkedinMatch) {
+    details.linkedin = "https://" + linkedinMatch[0];
+  }
+
+  var githubRegex = /github\.com\/[a-zA-Z0-9_-]+/;
+  var githubMatch = text.match(githubRegex);
+  if (githubMatch) {
+    details.github = "https://" + githubMatch[0];
+  }
+
+  // Line loops for location, education, and college keywords
+  for (var i = 0; i < lines.length; i++) {
+    var line = lines[i];
+    var lower = line.toLowerCase();
+
+    if (!details.ug && (lower.indexOf("bachelor") !== -1 || lower.indexOf("b.sc") !== -1 || lower.indexOf("b.e") !== -1 || lower.indexOf("b.tech") !== -1 || lower.indexOf("ug:") !== -1 || lower.indexOf("undergraduate") !== -1)) {
+      details.ug = line;
+    }
+
+    if (!details.pg && (lower.indexOf("master") !== -1 || lower.indexOf("m.sc") !== -1 || lower.indexOf("m.e") !== -1 || lower.indexOf("m.tech") !== -1 || lower.indexOf("pg:") !== -1 || lower.indexOf("postgraduate") !== -1 || lower.indexOf("mba") !== -1)) {
+      details.pg = line;
+    }
+
+    if (!details.location && (lower.indexOf("location:") !== -1 || lower.indexOf("address:") !== -1 || lower.indexOf("live in") !== -1)) {
+      details.location = line.replace(/location:/i, "").replace(/address:/i, "").trim();
+    }
+
+    if (!details.college && (lower.indexOf("college") !== -1 || lower.indexOf("university") !== -1 || lower.indexOf("institute") !== -1)) {
+      details.college = line;
+    }
+  }
+
+  // Fallback pattern lookups
+  if (!details.location) {
+    var locMatch = text.match(/location\s*:\s*([^\n]+)/i);
+    if (locMatch) details.location = locMatch[1].trim();
+  }
+
+  if (!details.college) {
+    var collMatch = text.match(/(?:college|university)\s*:\s*([^\n]+)/i);
+    if (collMatch) details.college = collMatch[1].trim();
+  }
+
+  // Work experience heuristics
+  var expLines = [];
+  for (var j = 0; j < lines.length; j++) {
+    var l = lines[j];
+    var low = l.toLowerCase();
+    if (low.indexOf("experience") !== -1 || low.indexOf("work history") !== -1 || low.indexOf("employment") !== -1) {
+      expLines.push(l);
+      if (j + 1 < lines.length) expLines.push(lines[j + 1]);
+      if (j + 2 < lines.length) expLines.push(lines[j + 2]);
+      break;
+    }
+  }
+
+  if (expLines.length > 0) {
+    details.workExperience = expLines.join("; ");
+  } else {
+    var expMatch = text.match(/\d+\+?\s*years?\s*of?\s*experience/i);
+    if (expMatch) {
+      details.workExperience = expMatch[0];
+    } else {
+      details.workExperience = "No experience listed";
+    }
+  }
+
+  // Route candidate using keyword matching scores
+  var fullLower = text.toLowerCase();
+  var aiScore = (fullLower.match(/ai|machine learning|python|llm|gpt|claude|openai|agent|automation|prompt/g) || []).length;
+  var sustainabilityScore = (fullLower.match(/sustainability|climate|environment|carbon|green|energy|solar/g) || []).length;
+  var webScore = (fullLower.match(/web|html|css|javascript|react|vue|angular|typescript|frontend|backend|nodejs/g) || []).length;
+
+  if (aiScore > sustainabilityScore && aiScore > webScore) {
+    details.role = "AI Automation Engineer";
+  } else if (webScore > sustainabilityScore && webScore > aiScore) {
+    details.role = "Web Developer";
+  } else {
+    details.role = "Sustainability";
+  }
+
+  return details;
+}
+
+// Scheduled Trigger cleanup function: moves resume files older than 14 days to trash
+function cleanupOldResumes() {
+  if (!RESUME_FOLDER_ID || RESUME_FOLDER_ID === "12345_PLACEHOLDER_FOLDER_ID_67890") {
+    Logger.log("Resume folder ID not set. Cleanup skipped.");
+    return;
+  }
+
+  var folder = DriveApp.getFolderById(RESUME_FOLDER_ID);
+  var files = folder.getFiles();
+  var now = new Date();
+  var limit = 14 * 24 * 60 * 60 * 1000; // 14 days in milliseconds
+  var count = 0;
+
+  while (files.hasNext()) {
+    var file = files.next();
+    var created = file.getDateCreated();
+    if (now.getTime() - created.getTime() > limit) {
+      Logger.log("Deleting old source resume file: " + file.getName());
+      file.setTrashed(true); // Soft delete / move to Drive Trash
+      count++;
+    }
+  }
+
+  Logger.log("Cleanup complete. Removed " + count + " files.");
+}
+
+/**
+ * One-time data migration function.
+ * Select this function in the Apps Script editor toolbar and click "Run".
+ * After running, this function can be safely deleted or ignored.
+ */
+function runDataMigration() {
+  const sheetId = "1KmEOk4qn0gF8pAbBUNCcrXuw2U4P3x18eVLAUxe1vtM";
+  const ss = SpreadsheetApp.openById(sheetId);
+
+  // 1. Migrate Candidates master sheet
+  const masterSheet = ss.getSheetByName("Candidates");
+  if (masterSheet) {
+    const data = masterSheet.getDataRange().getValues();
+    for (let i = 1; i < data.length; i++) {
+      const status = data[i][4] ? data[i][4].toString().trim() : "";
+      let newStatus = status;
+      if (status === "Applied" || status === "Shortlisted" || status === "Scheduled") {
+        newStatus = "Interviewing";
+      } else if (status === "Maybe") {
+        newStatus = "On Hold";
+      } else if (status === "Not Selected") {
+        newStatus = "Rejected";
+      }
+
+      if (newStatus !== status) {
+        masterSheet.getRange(i + 1, 5).setValue(newStatus);
+        Logger.log(`Migrated Candidate row ${i + 1}: ${status} -> ${newStatus}`);
+      }
+    }
+  }
+
+  // 2. Migrate Department sheets
+  const sheets = ss.getSheets();
+  for (let k = 0; k < sheets.length; k++) {
+    const sheet = sheets[k];
+    const name = sheet.getName();
+    if (name !== "Candidates" && name !== "ProcessedResumes" && name !== "ProcessedResumesLog") {
+      const deptData = sheet.getDataRange().getValues();
+      if (deptData.length > 1 && deptData[0][10] === "Status") {
+        for (let j = 1; j < deptData.length; j++) {
+          const status = deptData[j][10] ? deptData[j][10].toString().trim() : "";
+          let newStatus = status;
+          if (status === "Applied" || status === "Shortlisted" || status === "Scheduled") {
+            newStatus = "Interviewing";
+          } else if (status === "Maybe") {
+            newStatus = "On Hold";
+          } else if (status === "Not Selected") {
+            newStatus = "Rejected";
+          }
+
+          if (newStatus !== status) {
+            sheet.getRange(j + 1, 11).setValue(newStatus);
+            Logger.log(`Migrated ${name} row ${j + 1}: ${status} -> ${newStatus}`);
+          }
+        }
+      }
+    }
+  }
+  Logger.log("Status migration completed successfully.");
 }

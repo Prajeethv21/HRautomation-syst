@@ -181,3 +181,68 @@ export async function updateCandidateStatus(email, status) {
     throw new Error(`Failed to update status: ${error.message}`);
   }
 }
+
+export async function fetchDepartmentCandidates(sheetName) {
+  const { url, sheetId } = getCredentials();
+
+  console.log(`\n==================================================`);
+  console.log(`[BACKEND] Fetching department candidates for: "${sheetName}"`);
+  console.log(`[BACKEND] Apps Script Endpoint URL: ${url}`);
+  console.log(`[BACKEND] Target Google Sheet ID: ${sheetId}`);
+
+  try {
+    const response = await axios.get(url, {
+      params: {
+        action: 'getDepartmentCandidates',
+        sheetId: sheetId,
+        sheetName: sheetName
+      },
+      timeout: 15000
+    });
+
+    console.log(`[BACKEND] Apps Script Response Code: ${response.status}`);
+    console.log(`[BACKEND] Apps Script Response Body:`, JSON.stringify(response.data));
+
+    if (response.data && response.data.success && Array.isArray(response.data.data)) {
+      console.log(`[BACKEND] Sheet Lookup Result: SUCCESS, found ${response.data.data.length} candidates`);
+      console.log(`==================================================\n`);
+      return { data: response.data.data };
+    }
+
+    const errMsg = response.data?.message || 'Apps Script returned success: false or invalid department candidate data';
+    console.log(`[BACKEND] Sheet Lookup Result: FAILED - message: ${errMsg}`);
+    console.log(`==================================================\n`);
+    throw new Error(errMsg);
+  } catch (error) {
+    console.error(`[BACKEND] Exception caught during fetch for ${sheetName}:`, error.message);
+    if (error.response) {
+      console.error(`[BACKEND] HTTP Response Status: ${error.response.status}`);
+      console.error(`[BACKEND] HTTP Response Data:`, JSON.stringify(error.response.data));
+    }
+    console.log(`==================================================\n`);
+    throw new Error(`Failed to fetch department candidates: ${error.message}`);
+  }
+}
+
+export async function triggerResumeProcessing() {
+  const { url, sheetId } = getCredentials();
+
+  try {
+    const response = await axios.post(url, {
+      action: 'processResumes',
+      sheetId: sheetId
+    }, {
+      headers: { 'Content-Type': 'application/json' },
+      timeout: 40000 // 40s timeout for OCR parsing
+    });
+
+    if (response.data && response.data.success) {
+      return { success: true, message: response.data.message };
+    }
+
+    throw new Error(response.data?.message || 'Apps Script returned failure status');
+  } catch (error) {
+    console.error('Apps Script resume scan failed:', error.message);
+    throw new Error(`Failed to process resumes: ${error.message}`);
+  }
+}

@@ -1,10 +1,31 @@
+export type ATSStatus = 'Selected' | 'Interviewing' | 'On Hold' | 'Rejected';
+export type ATSSource = 'LinkedIn' | 'Career Page' | 'Referral' | 'Website' | 'Manual Entry' | 'Other';
+
 export interface Candidate {
   candidateName: string;
   email: string;
   role: string;
   joiningDate: string;
-  status: string;
+  status: ATSStatus | string;
   emailStatus: 'Pending' | 'Sent' | 'Failed';
+  source?: ATSSource | string;
+  resumeFileId?: string;
+}
+
+export interface DepartmentCandidate {
+  candidateName: string;
+  email: string;
+  phoneNumber: string;
+  workExperience: string;
+  ug: string;
+  pg: string;
+  college: string;
+  location: string;
+  linkedin: string;
+  github: string;
+  status: ATSStatus | string;
+  source?: ATSSource | string;
+  resumeFileId?: string;
 }
 
 export interface DashboardStats {
@@ -133,8 +154,11 @@ export const sendRejectionEmail = async (email: string): Promise<{ success: bool
 
 export const updateCandidateStatus = async (email: string, status: string): Promise<{ success: boolean; message: string }> => {
   try {
+    console.log("STATUS UPDATE START");
+    console.log("Email:", email);
+    console.log("Status:", status);
     const payload = { email, status };
-    console.log('Updating candidate status payload:', JSON.stringify(payload));
+
     const response = await fetch('/api/candidates/status', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -146,7 +170,7 @@ export const updateCandidateStatus = async (email: string, status: string): Prom
     let responseData: any = null;
     try {
       responseData = await response.json();
-      console.log('Status update response body:', JSON.stringify(responseData));
+      console.log("Response:", responseData);
     } catch (_) {
       console.warn('Could not parse status update response body');
     }
@@ -155,17 +179,61 @@ export const updateCandidateStatus = async (email: string, status: string): Prom
       return { success: true, message: responseData.message || 'Status updated successfully' };
     }
 
-    // Log the failure but return success so UI update is preserved
-    // This handles the case where Apps Script hasn't been redeployed yet
     const errMsg = responseData?.error || responseData?.message || `HTTP ${response.status}`;
-    console.warn('Status update backend error (UI preserved):', errMsg);
-    // Still return success so the optimistic UI update sticks
-    return { success: true, message: `Status set to ${status} (sync pending)` };
+    console.warn('Status update backend error:', errMsg);
+    return { success: false, message: errMsg };
 
   } catch (error: any) {
     console.error('Proxy status update POST failed:', error);
-    // Still return success for optimistic UI — sheet sync will happen on next redeploy
-    return { success: true, message: `Status set to ${status} (offline mode)` };
+    return { success: false, message: error.message || 'Offline mode' };
+  }
+};
+
+export const getDepartmentCandidates = async (sheetName: string): Promise<DepartmentCandidate[]> => {
+  try {
+    const response = await fetch(`/api/departments/${encodeURIComponent(sheetName)}`);
+
+    if (!response.ok) {
+      throw new Error(`HTTP error! status: ${response.status}`);
+    }
+
+    const responseData = await response.json();
+
+    if (responseData && responseData.success && Array.isArray(responseData.candidates)) {
+      return responseData.candidates;
+    }
+
+    throw new Error(responseData?.message || 'Invalid data received from proxy backend');
+  } catch (error: any) {
+    console.error(`Proxy department candidates fetch failed for ${sheetName}:`, error);
+    throw new Error(`Unable to connect to Google Sheets for ${sheetName}`);
+  }
+};
+
+export const triggerResumeProcessing = async (): Promise<{ success: boolean; message: string }> => {
+  try {
+    const response = await fetch('/api/resumes/process', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      }
+    });
+
+    if (!response.ok) {
+      throw new Error(`HTTP error! status: ${response.status}`);
+    }
+
+    const responseData = await response.json();
+    if (responseData && responseData.success) {
+      return {
+        success: true,
+        message: responseData.message || 'Resumes processed successfully'
+      };
+    }
+    throw new Error(responseData?.message || 'Backend returned failure status');
+  } catch (error: any) {
+    console.error('Proxy resume scan failed:', error);
+    throw new Error('Failed to trigger resume processing');
   }
 };
 

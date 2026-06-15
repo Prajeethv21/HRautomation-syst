@@ -4,7 +4,9 @@ import Sidebar from './components/Sidebar';
 import Header from './components/Header';
 import Dashboard from './pages/Dashboard';
 import Candidates from './pages/Candidates';
+import DepartmentDetails from './pages/DepartmentDetails';
 import { ToastProvider } from './components/ui/Toast';
+import { DEPARTMENTS } from './config/departments';
 
 const AppLayout: React.FC = () => {
   const location = useLocation();
@@ -12,6 +14,11 @@ const AppLayout: React.FC = () => {
   const getPageTitle = (pathname: string) => {
     if (pathname.startsWith('/dashboard')) return '';
     if (pathname.startsWith('/candidates')) return 'Candidate Management';
+    if (pathname.startsWith('/departments/')) {
+      const deptId = pathname.split('/')[2];
+      const dept = DEPARTMENTS.find(d => d.id === deptId);
+      return dept ? `${dept.name} Department` : 'Department Details';
+    }
     return 'Deepwoods Automation Portal';
   };
 
@@ -30,6 +37,7 @@ const AppLayout: React.FC = () => {
           <Routes>
             <Route path="/dashboard" element={<Dashboard />} />
             <Route path="/candidates" element={<Candidates />} />
+            <Route path="/departments/:id" element={<DepartmentDetails />} />
             {/* Catch-all redirect to Dashboard */}
             <Route path="*" element={<Navigate to="/dashboard" replace />} />
           </Routes>
