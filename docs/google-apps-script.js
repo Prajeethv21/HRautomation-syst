@@ -1248,10 +1248,9 @@ function processNewResumes(sheetId) {
 
   var sources = ["LinkedIn", "Other"];
   var roles = [
-    "AI Automation Engineer",
-    "AI/Data Engineer",
-    "Web Developer",
     "Sustainability",
+    "AI Automation Engineer",
+    "Web Developer",
     "Marketing",
     "Creative",
     "Others"
