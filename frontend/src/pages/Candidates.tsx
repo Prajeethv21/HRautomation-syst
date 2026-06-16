@@ -502,7 +502,7 @@ const Candidates: React.FC = () => {
   return (
     <div className="space-y-6 animate-fade-in">
       {/* Top action/filters bar */}
-      <div className="bg-white border border-brand-border p-5 rounded-3xl shadow-sm flex flex-col md:flex-row items-center justify-between gap-4">
+      <div className="bg-white border border-brand-border p-5 rounded-3xl shadow-sm flex flex-col md:flex-row items-center justify-between gap-4 overflow-visible">
         {/* Search Input */}
         <div className="relative w-full md:w-80">
           <Search className="w-4 h-4 text-gray-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
@@ -558,7 +558,7 @@ const Candidates: React.FC = () => {
                   animate={{ opacity: 1, y: 0, scale: 1 }}
                   exit={{ opacity: 0, y: 10, scale: 0.98 }}
                   transition={{ duration: 0.2, ease: 'easeOut' }}
-                  className="absolute right-0 mt-3 w-64 bg-white border border-brand-border rounded-3xl shadow-[0_20px_48px_rgba(168,214,114,0.15)] p-5 z-30 space-y-4 max-h-[480px] overflow-y-auto"
+                  className="absolute right-0 mt-3 w-64 bg-white border border-brand-border rounded-3xl shadow-[0_20px_48px_rgba(168,214,114,0.15)] p-5 z-50 space-y-4 max-h-[480px] overflow-y-auto"
                 >
                   {/* Candidate Status Filter */}
                   <div className="space-y-2">

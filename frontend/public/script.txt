@@ -1,0 +1,1644 @@
+/**
+ * DEEPWOODS GREEN INITIATIVES PVT. LTD.
+ * Google Apps Script - Joining Letter Automation Macro (REST API Version)
+ * 
+ * Deployment Instructions:
+ * 1. Open your Google Sheet ("Candidates").
+ * 2. Click Extensions > Apps Script.
+ * 3. Replace all the code in the Apps Script editor with this entire file.
+ * 4. Click Save (disk icon).
+ * 5. Click Deploy > New Deployment.
+ * 6. Select Type: Web App.
+ *    - Execute as: "Me" (your account)
+ *    - Who has access: "Anyone"
+ * 7. Click Deploy, authorize the permissions, and copy the Web App URL.
+ * 8. Paste the Web App URL into your frontend/.env file as VITE_APPS_SCRIPT_URL.
+ */
+
+const SHEET_NAME = "Candidates";
+const TEMPLATE_ID = "1T7cl_UOi8ojl5tR99gplQCJuNARs4hD5kTZw9NXT3tw";
+const LOGO_FILE_ID = "1LimR9KAN-1FteqjlNR-h_mfAuy3kqRHR10hMplcf67iLGN1SUHoy5PYReXQoj6FIV";
+
+// Google Drive folder ID where resumes are uploaded
+const RESUME_FOLDER_ID = "12345_PLACEHOLDER_FOLDER_ID_67890";
+
+// Configure Department Sheet Mapping
+const ROLE_TO_SHEET_MAP = {
+  "Sustainability": "Sustainability",
+  "AI Automation Engineer": "AI Automation Engineer",
+  "Web Developer": "Web Devloper"
+};
+
+// --- ORIGINAL AUTOMATION FUNCTIONS ---
+
+function getPendingCandidates() {
+  const sheet = getSheet();
+  const data = sheet.getDataRange().getValues();
+  const pendingCandidates = [];
+
+  for (let i = 1; i < data.length; i++) {
+    const row = data[i];
+    const candidateName = row[0];
+    const email = row[1];
+    const role = row[2];
+    const joiningDate = row[3];
+    const status = row[4];
+    const emailStatus = row[5];
+
+    if (status === "Selected" && emailStatus === "Pending") {
+      pendingCandidates.push({
+        rowNumber: i + 1,
+        candidateName,
+        email,
+        role,
+        joiningDate
+      });
+    }
+  }
+  return pendingCandidates;
+}
+
+function getLogoBlobSafely() {
+  try {
+    if (typeof LOGO_FILE_ID !== 'undefined' && LOGO_FILE_ID) {
+      // Use Advanced Drive Service and UrlFetchApp to bypass DriveApp permissions issues
+      var fileMetadata = Drive.Files.get(LOGO_FILE_ID);
+      if (fileMetadata && fileMetadata.downloadUrl) {
+        var response = UrlFetchApp.fetch(fileMetadata.downloadUrl, {
+          headers: {
+            'Authorization': 'Bearer ' + ScriptApp.getOAuthToken()
+          }
+        });
+        return response.getBlob().setName("logo.png");
+      }
+    }
+  } catch (e) {
+    Logger.log("WARNING: Failed to fetch logo image from Drive: " + e.toString());
+  }
+  return null;
+}
+
+function getOrCreateTemplateDocId() {
+  try {
+    DocumentApp.openById(TEMPLATE_ID);
+    return TEMPLATE_ID;
+  } catch (e) {
+    Logger.log("TEMPLATE_ID inaccessible. Searching for template in Drive...");
+  }
+  var query = "title contains 'Joining Letter Template' and mimeType = 'application/vnd.google-apps.document' and trashed = false";
+  var filesList = Drive.Files.list({ q: query, maxResults: 1 });
+  if (filesList.items && filesList.items.length > 0) {
+    var foundId = filesList.items[0].id;
+    Logger.log("Found existing template doc ID: " + foundId);
+    return foundId;
+  }
+  Logger.log("No template found. Creating new Joining Letter Template document...");
+  var newDoc = DocumentApp.create("Joining Letter Template");
+  var body = newDoc.getBody();
+  body.appendParagraph("DEEPWOODS GREEN INITIATIVES PVT. LTD.");
+  body.appendParagraph("Date: {{date_of_letter}}");
+  body.appendParagraph("\nDear {{candidate_name}},");
+  body.appendParagraph("\nWe are pleased to offer you the position of {{role}} starting on {{joining_date}}.");
+  body.appendParagraph("\nWelcome to the team!");
+  body.appendParagraph("\nBest regards,\nDeepwoods Green HR");
+  var newId = newDoc.getId();
+  newDoc.saveAndClose();
+  try {
+    Drive.Permissions.insert({
+      role: "reader",
+      type: "anyone"
+    }, newId);
+  } catch (e) {
+    // ignore
+  }
+  Logger.log("Created new template doc ID: " + newId);
+  return newId;
+}
+
+function generateJoiningLetter(candidate) {
+  Logger.log('Apps Script generating PDF for candidate: ' + JSON.stringify(candidate));
+  
+  var activeTemplateId = TEMPLATE_ID;
+  try {
+    Drive.Files.get(activeTemplateId);
+  } catch (err) {
+    activeTemplateId = getOrCreateTemplateDocId();
+  }
+
+  // Use Advanced Drive Service to copy the template instead of DriveApp
+  var copyFile = Drive.Files.copy({
+    title: `JoiningLetter_${candidate.candidateName}`
+  }, activeTemplateId);
+  const copyId = copyFile.id;
+  
+  const doc = DocumentApp.openById(copyId);
+  const body = doc.getBody();
+
+  var joiningDateObj = new Date();
+  if (candidate.joiningDate) {
+    var parsedDate = new Date(candidate.joiningDate);
+    if (!isNaN(parsedDate.getTime())) {
+      joiningDateObj = parsedDate;
+    }
+  }
+
+  const formattedJoiningDate = Utilities.formatDate(
+    joiningDateObj,
+    Session.getScriptTimeZone(),
+    "dd MMM yyyy"
+  );
+
+  body.replaceText("{{candidate_name}}", candidate.candidateName);
+  body.replaceText("{{role}}", candidate.role);
+  body.replaceText("{{joining_date}}", formattedJoiningDate);
+  body.replaceText(
+    "{{date_of_letter}}",
+    Utilities.formatDate(new Date(), Session.getScriptTimeZone(), "dd MMM yyyy")
+  );
+
+  doc.saveAndClose();
+
+  // Export copy to PDF using DocumentApp's getAs instead of DriveApp
+  const pdfFile = doc.getAs(MimeType.PDF);
+  const pdfName = `JoiningLetter_${candidate.candidateName.replace(/\s+/g, "")}_${candidate.role.replace(/\s+/g, "")}.pdf`;
+  pdfFile.setName(pdfName);
+
+  Logger.log('Apps Script generateJoiningLetter SUCCESS. Temp doc copy ID: ' + copyId);
+
+  return {
+    pdf: pdfFile,
+    copyId: copyId
+  };
+}
+
+function sendJoiningEmail(candidate, pdfFile) {
+  Logger.log('Apps Script sending email to: ' + candidate.email);
+  const logoBlob = getLogoBlobSafely();
+  const subject = "Offer of Joining - Deepwoods Green Initiatives Pvt. Ltd.";
+
+  var joiningDateObj = new Date();
+  if (candidate.joiningDate) {
+    var parsedDate = new Date(candidate.joiningDate);
+    if (!isNaN(parsedDate.getTime())) {
+      joiningDateObj = parsedDate;
+    }
+  }
+
+  const formattedJoiningDate = Utilities.formatDate(
+    joiningDateObj,
+    Session.getScriptTimeZone(),
+    "dd MMM yyyy"
+  );
+
+  var htmlBody = `
+  <div style="font-family:'Trebuchet MS',sans-serif;font-size:14px;line-height:1.7;color:#333;max-width:680px;">
+    <p>Dear <b>${candidate.candidateName}</b>,</p>
+    <p>
+      We are delighted to inform you that you have been selected
+      to join <b>Deepwoods Green Initiatives Pvt. Ltd.</b>
+      as <b>${candidate.role}</b>.
+    </p>
+    <p>
+      Your joining date is <b>${formattedJoiningDate}</b>.
+    </p>
+    <p>
+      Please find your joining letter attached to this email.
+    </p>
+    <p>
+      We look forward to having you on the team.
+    </p>
+    <p>
+      Warm Regards,<br>
+      <b>Deepwoods Green Initiatives Pvt. Ltd.</b>
+    </p>
+    <img src="cid:deepwoodsLogo" width="300">
+    <hr>
+    <p style="font-size:12px;color:#666;">
+      we@deepwoodsgreen.com | +91 98413 39293
+    </p>
+  </div>
+  `;
+
+  var options = {
+    htmlBody: htmlBody,
+    attachments: [pdfFile]
+  };
+
+  if (logoBlob) {
+    options.inlineImages = {
+      deepwoodsLogo: logoBlob
+    };
+  } else {
+    htmlBody = htmlBody.replace(/<img[^>]+deepwoodsLogo[^>]*>/gi, "");
+    options.htmlBody = htmlBody;
+  }
+
+  Logger.log("About to send email to: " + candidate.email);
+  try {
+    GmailApp.sendEmail(
+      candidate.email,
+      subject,
+      "",
+      options
+    );
+  } catch (err) {
+    Logger.log("GMAIL ERROR: " + err.toString());
+    throw err;
+  }
+  Logger.log('Apps Script sendJoiningEmail executed successfully.');
+}
+
+function sendJoiningLetters() {
+  const sheet = getSheet();
+  const candidates = getPendingCandidates();
+
+  if (candidates.length === 0) {
+    SpreadsheetApp.getUi().alert("No pending candidates found.");
+    return;
+  }
+
+  let sentCount = 0;
+
+  candidates.forEach(candidate => {
+    try {
+      if (!candidate.email) {
+        Logger.log(`Missing email for ${candidate.candidateName}`);
+        return;
+      }
+
+      const result = generateJoiningLetter(candidate);
+      sendJoiningEmail(candidate, result.pdf);
+
+      sheet.getRange(candidate.rowNumber, 6).setValue("Sent");
+
+      // Use Advanced Drive Service to delete the file
+      Drive.Files.remove(result.copyId);
+      sentCount++;
+    } catch (error) {
+      Logger.log(`Error for ${candidate.candidateName}: ${error}`);
+    }
+  });
+
+  SpreadsheetApp.getUi().alert(`Done. ${sentCount} joining letter(s) sent.`);
+}
+
+function confirmAndSend() {
+  const ui = SpreadsheetApp.getUi();
+  const response = ui.alert(
+    "This will send joining letters to all Selected candidates with Pending email status. Continue?",
+    ui.ButtonSet.YES_NO
+  );
+
+  if (response === ui.Button.YES) {
+    sendJoiningLetters();
+  }
+}
+
+function onOpen() {
+  SpreadsheetApp.getUi()
+    .createMenu("HR Automation")
+    .addItem("Send Joining Letters", "confirmAndSend")
+    .addToUi();
+}
+
+// Bidirectional status synchronization trigger
+function onEdit(e) {
+  if (!e || !e.range) return;
+  var range = e.range;
+  var sheet = range.getSheet();
+  var sheetName = sheet.getName();
+  var row = range.getRow();
+  var col = range.getColumn();
+  var val = range.getValue().toString().trim();
+  
+  if (row <= 1) return; // Skip headers
+  
+  var allowedStatuses = ['Selected', 'Interviewing', 'On Hold', 'Rejected'];
+  if (allowedStatuses.indexOf(val) === -1) return; // Only sync valid statuses
+  
+  if (sheetName === "Candidates" && col === 5) {
+    // Candidates status changed -> sync to Department sheet column J (10)
+    var email = sheet.getRange(row, 2).getValue().toString().trim();
+    var role = sheet.getRange(row, 3).getValue().toString().trim();
+    var deptSheetName = ROLE_TO_SHEET_MAP[role] || role;
+    if (deptSheetName && email) {
+      var deptSheet = sheet.getParent().getSheetByName(deptSheetName);
+      if (deptSheet) {
+        var deptData = deptSheet.getDataRange().getValues();
+        for (var i = 1; i < deptData.length; i++) {
+          if (deptData[i][1] && deptData[i][1].toString().trim().toLowerCase() === email.toLowerCase()) {
+            var deptStatusCell = deptSheet.getRange(i + 1, 10);
+            if (deptStatusCell.getValue().toString().trim() !== val) {
+              deptStatusCell.setValue(val);
+            }
+            break;
+          }
+        }
+      }
+    }
+  } else if (sheetName !== "Candidates" && sheetName !== "ProcessedResumes" && sheetName !== "ProcessedResumesLog" && col === 10) {
+    // Department status changed -> sync to Candidates sheet column E (5)
+    var email = sheet.getRange(row, 2).getValue().toString().trim();
+    if (email) {
+      var masterSheet = sheet.getParent().getSheetByName("Candidates");
+      if (masterSheet) {
+        var masterData = masterSheet.getDataRange().getValues();
+        for (var i = 1; i < masterData.length; i++) {
+          if (masterData[i][1] && masterData[i][1].toString().trim().toLowerCase() === email.toLowerCase()) {
+            var masterStatusCell = masterSheet.getRange(i + 1, 5);
+            if (masterStatusCell.getValue().toString().trim() !== val) {
+              masterStatusCell.setValue(val);
+            }
+            break;
+          }
+        }
+      }
+    }
+  }
+}
+
+// --- REST API ENDPOINTS FOR FRONTEND ---
+
+// Helper: Safely resolve the target sheet
+function getSheet(sheetId) {
+  if (sheetId) {
+    try {
+      return SpreadsheetApp.openById(sheetId).getSheetByName(SHEET_NAME);
+    } catch (e) {
+      // Fallback
+    }
+  }
+  try {
+    return SpreadsheetApp.getActiveSpreadsheet().getSheetByName(SHEET_NAME);
+  } catch (e) {
+    // If running headless and openById fails, return first sheet of provided ID
+    if (sheetId) {
+      return SpreadsheetApp.openById(sheetId).getSheets()[0];
+    }
+    throw e;
+  }
+}
+
+function getSheetByName(sheetId, name) {
+  const targetName = name || SHEET_NAME;
+  if (sheetId) {
+    try {
+      return SpreadsheetApp.openById(sheetId).getSheetByName(targetName);
+    } catch (e) {
+      // Fallback
+    }
+  }
+  try {
+    return SpreadsheetApp.getActiveSpreadsheet().getSheetByName(targetName);
+  } catch (e) {
+    if (sheetId) {
+      return SpreadsheetApp.openById(sheetId).getSheets()[0];
+    }
+    throw e;
+  }
+}
+
+// CORS pre-flight handler for POST requests
+function doOptions(e) {
+  return ContentService.createTextOutput("")
+    .setMimeType(ContentService.MimeType.TEXT);
+}
+
+/**
+ * Handle GET Requests from frontend portal
+ * URL params: ?action=getCandidates&sheetId=YOUR_SHEET_ID
+ */
+function doGet(e) {
+  var action = e.parameter.action;
+  var sheetId = e.parameter.sheetId;
+
+  if (action === "getCandidates") {
+    return handleGetCandidates(sheetId);
+  }
+
+  if (action === "getDepartmentCandidates") {
+    var sheetName = e.parameter.sheetName;
+    return handleGetDepartmentCandidates(sheetId, sheetName);
+  }
+
+  if (action === "processResumes") {
+    return handleProcessResumes(sheetId);
+  }
+
+  return makeJsonResponse({ success: false, message: "Unknown GET action" }, 400);
+}
+
+/**
+ * Handle POST Requests from frontend portal
+ * Body: { action: "sendJoiningLetter", sheetId: "...", candidateEmail: "..." }
+ */
+function doPost(e) {
+  Logger.log("FULL REQUEST:");
+  Logger.log(e.postData.contents);
+  Logger.log('Apps Script doPost() received request payload: ' + e.postData.contents);
+  try {
+    var data = JSON.parse(e.postData.contents);
+    var action = data.action;
+    var sheetId = data.sheetId;
+    var candidateEmail = data.candidateEmail || data.email;
+
+    if (action === "sendJoiningLetter") {
+      return handleSendJoiningLetter(sheetId, candidateEmail);
+    }
+
+    if (action === "sendRejectionEmail") {
+      return handleSendRejectionEmail(sheetId, candidateEmail);
+    }
+
+    if (action === "updateCandidateStatus") {
+      var newStatus = data.status;
+      return handleUpdateCandidateStatus(sheetId, candidateEmail, newStatus);
+    }
+
+    if (action === "createCandidate") {
+      var candidate = data.candidate;
+      return handleCreateCandidate(sheetId, candidate);
+    }
+
+    if (action === "processResumes") {
+      return handleProcessResumes(sheetId);
+    }
+
+    return makeJsonResponse({ success: false, message: "Unknown POST action" }, 400);
+  } catch (error) {
+    return makeJsonResponse({ success: false, message: "Exception encountered: " + error.toString() }, 500);
+  }
+}
+
+// REST Endpoint Helper: Retrieve all candidate rows
+function handleGetCandidates(sheetId) {
+  try {
+    const sheet = getSheet(sheetId);
+    const data = sheet.getDataRange().getValues();
+    const candidates = [];
+
+    // Map sheet rows starting from index 1 (skipping header)
+    for (let i = 1; i < data.length; i++) {
+      const row = data[i];
+      const candidate = {};
+
+      candidate.candidateName = row[0] ? row[0].toString().trim() : "";
+      candidate.email = row[1] ? row[1].toString().trim() : "";
+      candidate.role = row[2] ? row[2].toString().trim() : "";
+
+      // Date formatting
+      var rawDate = row[3];
+      if (rawDate instanceof Date) {
+        candidate.joiningDate = Utilities.formatDate(rawDate, Session.getScriptTimeZone(), "yyyy-MM-dd");
+      } else {
+        candidate.joiningDate = rawDate ? rawDate.toString().trim() : "";
+      }
+
+      candidate.status = row[4] ? row[4].toString().trim() : "Interviewing";
+      candidate.emailStatus = row[5] ? row[5].toString().trim() : "Pending";
+      candidate.source = row[6] ? row[6].toString().trim() : "Other";
+      candidate.resumeFileId = ""; // removed completely
+
+      // Avoid pushing empty rows
+      if (candidate.candidateName || candidate.email) {
+        candidates.push(candidate);
+      }
+    }
+
+    return makeJsonResponse({ success: true, data: candidates }, 200);
+  } catch (error) {
+    return makeJsonResponse({ success: false, message: "Failed to read Google Sheet: " + error.toString() }, 500);
+  }
+}
+
+// REST Endpoint Helper: Trigger letter for a candidate by Email
+function handleSendJoiningLetter(sheetId, candidateEmail) {
+  Logger.log("ENTERED handleSendJoiningLetter");
+  Logger.log("candidateEmail = " + candidateEmail);
+  Logger.log('Apps Script looking up candidate with email: ' + candidateEmail);
+  try {
+    if (!candidateEmail) {
+      return makeJsonResponse({ success: false, message: "Candidate Email parameter is required" }, 400);
+    }
+
+    const sheet = getSheet(sheetId);
+    const data = sheet.getDataRange().getValues();
+    let rowIndex = -1;
+    let candidate = null;
+
+    // Search for the candidate by Email in column B (index 1)
+    for (let i = 1; i < data.length; i++) {
+      if (data[i][1] && data[i][1].toString().trim().toLowerCase() === candidateEmail.trim().toLowerCase()) {
+        rowIndex = i;
+        candidate = {
+          rowNumber: i + 1,
+          candidateName: data[i][0].toString().trim(),
+          email: data[i][1].toString().trim(),
+          role: data[i][2].toString().trim(),
+          joiningDate: data[i][3]
+        };
+        break;
+      }
+    }
+
+    if (!candidate || rowIndex === -1) {
+      Logger.log('Apps Script candidate lookup FAILED for email: ' + candidateEmail);
+      return makeJsonResponse({ success: false, message: "Candidate Email not found in spreadsheet: " + candidateEmail }, 404);
+    }
+
+    Logger.log('Apps Script candidate lookup SUCCESS. Candidate data: ' + JSON.stringify(candidate));
+
+    // Generate joining letter PDF using the template
+    const result = generateJoiningLetter(candidate);
+
+    // Send the email with GmailApp
+    sendJoiningEmail(candidate, result.pdf);
+
+    // Update Email Status in column F (index 5 / Column 6) to "Sent"
+    sheet.getRange(candidate.rowNumber, 6).setValue("Sent");
+
+    // Clean up temporary doc via Advanced Drive
+    Drive.Files.remove(result.copyId);
+
+    Logger.log('Apps Script sendJoiningLetter successfully completed for email: ' + candidateEmail);
+
+    return makeJsonResponse({
+      success: true,
+      message: "Joining Letter successfully emailed to " + candidateEmail + " and spreadsheet status updated."
+    }, 200);
+
+  } catch (error) {
+    Logger.log('Apps Script sendJoiningLetter FAILED with error: ' + error.toString());
+    return makeJsonResponse({ success: false, message: "Automation failed: " + error.toString() }, 500);
+  }
+}
+
+// Response output wrapper with CORS headers
+function makeJsonResponse(data, status) {
+  try {
+    data.logs = Logger.getLog();
+  } catch (e) {
+    // ignore
+  }
+  var output = ContentService.createTextOutput(JSON.stringify(data))
+    .setMimeType(ContentService.MimeType.JSON);
+
+  return output;
+}
+
+// REST Endpoint Helper: Send rejection email (no PDF, no DriveApp)
+function handleSendRejectionEmail(sheetId, candidateEmail) {
+  Logger.log("ENTERED handleSendRejectionEmail");
+  Logger.log("candidateEmail = " + candidateEmail);
+  Logger.log('Apps Script looking up candidate for rejection email: ' + candidateEmail);
+  try {
+    if (!candidateEmail) {
+      return makeJsonResponse({ success: false, message: "Candidate Email parameter is required" }, 400);
+    }
+
+    const sheet = getSheet(sheetId);
+    const data = sheet.getDataRange().getValues();
+    let rowIndex = -1;
+    let candidate = null;
+
+    for (let i = 1; i < data.length; i++) {
+      if (data[i][1] && data[i][1].toString().trim().toLowerCase() === candidateEmail.trim().toLowerCase()) {
+        rowIndex = i;
+        candidate = {
+          rowNumber: i + 1,
+          candidateName: data[i][0].toString().trim(),
+          email: data[i][1].toString().trim(),
+          role: data[i][2].toString().trim()
+        };
+        break;
+      }
+    }
+
+    if (!candidate || rowIndex === -1) {
+      Logger.log('Apps Script candidate lookup FAILED for rejection email: ' + candidateEmail);
+      return makeJsonResponse({ success: false, message: "Candidate Email not found in spreadsheet: " + candidateEmail }, 404);
+    }
+
+    Logger.log('Apps Script candidate found for rejection: ' + JSON.stringify(candidate));
+
+    const today = Utilities.formatDate(new Date(), Session.getScriptTimeZone(), "dd MMM yyyy");
+    const logoBlob = getLogoBlobSafely();
+
+    const subject = "Application Update \u2013 Deepwoods Green Initiatives Pvt. Ltd.";
+
+    var htmlBody = `
+  <div style="font-family:'Trebuchet MS',sans-serif;font-size:14px;line-height:1.7;color:#333;max-width:680px;">
+    <p>Date: ${today}</p>
+
+    <p>Dear <b>${candidate.candidateName}</b>,</p>
+
+    <p>
+      Thank you for your interest in <b>Deepwoods Green Initiatives Pvt. Ltd.</b> and for participating in our recruitment process for the position of <b>${candidate.role}</b>.
+    </p>
+
+    <p>
+      After careful review, we regret to inform you that you have not been selected for this opportunity. We sincerely appreciate the time and effort you invested throughout the selection process.
+    </p>
+
+    <p>
+      We wish you success in your future endeavors and encourage you to apply for suitable opportunities with us in the future.
+    </p>
+
+    <p>
+      Sustainably Yours&reg;,<br>
+      <b>Deepwoods Green Initiatives Pvt. Ltd.</b>
+    </p>
+
+    <img src="cid:deepwoodsLogo" width="300">
+
+    <hr>
+
+    <p style="font-size:12px;color:#666;">
+      we@deepwoodsgreen.com | +91 98413 39293
+    </p>
+  </div>
+  `;
+
+    var options = {
+      htmlBody: htmlBody
+    };
+
+    if (logoBlob) {
+      options.inlineImages = { deepwoodsLogo: logoBlob };
+    } else {
+      htmlBody = htmlBody.replace(/<img[^>]+deepwoodsLogo[^>]*>/gi, "");
+      options.htmlBody = htmlBody;
+    }
+
+    Logger.log("About to send email to: " + candidate.email);
+    try {
+      GmailApp.sendEmail(
+        candidate.email,
+        subject,
+        "",
+        options
+      );
+    } catch (err) {
+      Logger.log("GMAIL ERROR: " + err.toString());
+      throw err;
+    }
+
+    Logger.log('Apps Script rejection email sent successfully to: ' + candidateEmail);
+
+    // Update Email Status column F (index 5) to "Sent"
+    sheet.getRange(candidate.rowNumber, 6).setValue("Sent");
+
+    Logger.log('Apps Script updated Email Status to Sent for: ' + candidateEmail);
+
+    return makeJsonResponse({
+      success: true,
+      message: "Rejection email successfully sent to " + candidateEmail + " and spreadsheet status updated."
+    }, 200);
+
+  } catch (error) {
+    Logger.log('Apps Script handleSendRejectionEmail FAILED: ' + error.toString());
+    return makeJsonResponse({ success: false, message: "Rejection email failed: " + error.toString() }, 500);
+  }
+}
+
+// REST Endpoint Helper: Update candidate status (column E in Candidates, column J in Department) by email
+function handleUpdateCandidateStatus(sheetId, candidateEmail, newStatus) {
+  Logger.log('=== handleUpdateCandidateStatus CALLED ===');
+  Logger.log('candidateEmail: ' + candidateEmail);
+  Logger.log('newStatus: ' + newStatus);
+  Logger.log('sheetId: ' + sheetId);
+
+  try {
+    if (!candidateEmail) {
+      return makeJsonResponse({ success: false, message: "candidateEmail is required" }, 400);
+    }
+    if (!newStatus) {
+      return makeJsonResponse({ success: false, message: "status is required" }, 400);
+    }
+
+    var allowedStatuses = ['Selected', 'Interviewing', 'On Hold', 'Rejected'];
+    if (allowedStatuses.indexOf(newStatus) === -1) {
+      Logger.log('INVALID status value: ' + newStatus);
+      return makeJsonResponse({ success: false, message: "Invalid status value. Allowed: " + allowedStatuses.join(', ') }, 400);
+    }
+
+    const masterSheet = getSheetByName(sheetId, "Candidates");
+    const masterData = masterSheet.getDataRange().getValues();
+    let masterRowIndex = -1;
+    let candidateRole = "";
+
+    // 1. Update Candidates master sheet
+    for (let i = 1; i < masterData.length; i++) {
+      if (masterData[i][1] && masterData[i][1].toString().trim().toLowerCase() === candidateEmail.trim().toLowerCase()) {
+        masterRowIndex = i + 1; // Convert 0-based to 1-based row index
+        candidateRole = masterData[i][2] ? masterData[i][2].toString().trim() : "";
+        break;
+      }
+    }
+
+    if (masterRowIndex === -1) {
+      Logger.log('FAILED: candidate not found for email=' + candidateEmail);
+      return makeJsonResponse({ success: false, message: "Candidate not found: " + candidateEmail }, 404);
+    }
+
+    // Update status cell in master Candidates sheet (Column E)
+    var statusCell = masterSheet.getRange(masterRowIndex, 5);
+    statusCell.setValue(newStatus);
+    Logger.log('SUCCESS: Updated master sheet status at row ' + masterRowIndex);
+
+    // 2. Update matching Department sheet
+    const deptSheetName = ROLE_TO_SHEET_MAP[candidateRole] || candidateRole;
+    if (deptSheetName) {
+      const deptSheet = getSheetByName(sheetId, deptSheetName);
+      if (deptSheet) {
+        const deptData = deptSheet.getDataRange().getValues();
+        let deptRowIndex = -1;
+
+        for (let j = 1; j < deptData.length; j++) {
+          if (deptData[j][1] && deptData[j][1].toString().trim().toLowerCase() === candidateEmail.trim().toLowerCase()) {
+            deptRowIndex = j + 1;
+            break;
+          }
+        }
+
+        if (deptRowIndex !== -1) {
+          // Status column in Department sheet is at index 9 (Column J, 10th column)
+          var deptStatusCell = deptSheet.getRange(deptRowIndex, 10);
+          deptStatusCell.setValue(newStatus);
+          Logger.log('SUCCESS: Updated department sheet status at row ' + deptRowIndex + ' in ' + deptSheetName);
+        } else {
+          Logger.log('WARN: Candidate not found in department sheet ' + deptSheetName);
+        }
+      }
+    }
+
+    return makeJsonResponse({
+      success: true,
+      message: "Status updated to " + newStatus + " for " + candidateEmail
+    }, 200);
+
+  } catch (error) {
+    Logger.log('handleUpdateCandidateStatus FAILED: ' + error.toString());
+    return makeJsonResponse({ success: false, message: "Status update failed: " + error.toString() }, 500);
+  }
+}
+
+// REST Endpoint Helper: Retrieve department candidates
+function handleGetDepartmentCandidates(sheetId, sheetName) {
+  try {
+    if (!sheetName) {
+      return makeJsonResponse({ success: false, message: "sheetName is required" }, 400);
+    }
+
+    const sheet = getSheetByName(sheetId, sheetName);
+    if (!sheet) {
+      return makeJsonResponse({ success: true, data: [] }, 200);
+    }
+
+    const lastRow = sheet.getLastRow();
+    if (lastRow <= 1) {
+      return makeJsonResponse({ success: true, data: [] }, 200);
+    }
+
+    const data = sheet.getDataRange().getValues();
+    const candidates = [];
+
+    // Read sources and email statuses from Candidates master sheet
+    var emailSources = {};
+    var emailStatuses = {};
+    const masterSheet = getSheet(sheetId);
+    if (masterSheet) {
+      const masterData = masterSheet.getDataRange().getValues();
+      for (let i = 1; i < masterData.length; i++) {
+        if (masterData[i][1]) {
+          var emailKey = masterData[i][1].toString().trim().toLowerCase();
+          emailSources[emailKey] = masterData[i][6] ? masterData[i][6].toString().trim() : "Website";
+          emailStatuses[emailKey] = masterData[i][5] ? masterData[i][5].toString().trim() : "Pending";
+        }
+      }
+    }
+
+    // Columns: Candidate Name, Email, Phone Number, Work Experience, UG, PG, College, LinkedIn, GitHub, Status
+    for (let i = 1; i < data.length; i++) {
+      const row = data[i];
+      const candidate = {};
+
+      candidate.candidateName = row[0] ? row[0].toString().trim() : "";
+      candidate.email = row[1] ? row[1].toString().trim() : "";
+      candidate.phoneNumber = row[2] ? row[2].toString().trim() : "";
+      candidate.workExperience = row[3] ? row[3].toString().trim() : "";
+      candidate.ug = row[4] ? row[4].toString().trim() : "";
+      candidate.pg = row[5] ? row[5].toString().trim() : "";
+      candidate.college = row[6] ? row[6].toString().trim() : "";
+      candidate.linkedin = row[7] ? row[7].toString().trim() : "";
+      candidate.github = row[8] ? row[8].toString().trim() : "";
+      candidate.status = row[9] ? row[9].toString().trim() : "Interviewing";
+      candidate.source = emailSources[candidate.email.toLowerCase()] || "Website";
+      candidate.emailStatus = emailStatuses[candidate.email.toLowerCase()] || "Pending";
+      candidate.resumeFileId = "";
+
+      if (candidate.candidateName || candidate.email) {
+        candidates.push(candidate);
+      }
+    }
+
+    return makeJsonResponse({ success: true, data: candidates }, 200);
+  } catch (error) {
+    return makeJsonResponse({ success: false, message: "Failed to read department sheet: " + error.toString() }, 500);
+  }
+}
+
+// REST Endpoint Helper: Ingest a candidate and auto-route them to the correct department
+function handleCreateCandidate(sheetId, candidate) {
+  try {
+    if (!candidate || !candidate.email || !candidate.name) {
+      return makeJsonResponse({ success: false, message: "Candidate name and email are required" }, 400);
+    }
+
+    const masterSheet = getSheetByName(sheetId, "Candidates");
+    const masterData = masterSheet.getDataRange().getValues();
+    let candidateExists = false;
+
+    // Check if candidate already exists in Candidates master sheet
+    for (let i = 1; i < masterData.length; i++) {
+      if (masterData[i][1] && masterData[i][1].toString().trim().toLowerCase() === candidate.email.trim().toLowerCase()) {
+        candidateExists = true;
+        break;
+      }
+    }
+
+    if (candidateExists) {
+      return makeJsonResponse({ success: false, message: "Candidate with email " + candidate.email + " already exists" }, 400);
+    }
+
+    // 1. Add to Candidates master sheet (exactly 7 columns, no resumeFileId)
+    // Columns: Candidate Name, Email Address, Role Applied For, Joining Date, Status, Email Status, Source
+    masterSheet.appendRow([
+      candidate.name,
+      candidate.email,
+      candidate.role || "",
+      candidate.joiningDate || "",
+      candidate.status || "Interviewing",
+      candidate.emailStatus || "Pending",
+      candidate.source || "Website"
+    ]);
+
+    // 2. Add to Department sheet (exactly 10 columns, no Source or Resume File ID)
+    const deptSheetName = ROLE_TO_SHEET_MAP[candidate.role] || candidate.role;
+    if (deptSheetName) {
+      let deptSheet = getSheetByName(sheetId, deptSheetName);
+      if (!deptSheet) {
+        // Create the department sheet dynamically if missing
+        const ss = sheetId ? SpreadsheetApp.openById(sheetId) : SpreadsheetApp.getActiveSpreadsheet();
+        deptSheet = ss.insertSheet(deptSheetName);
+        deptSheet.appendRow([
+          "Candidate Name",
+          "Email",
+          "Phone Number",
+          "Work Experience",
+          "UG",
+          "PG",
+          "College",
+          "LinkedIn",
+          "GitHub",
+          "Status"
+        ]);
+      }
+
+      // Columns: Candidate Name, Email, Phone Number, Work Experience, UG, PG, College, LinkedIn, GitHub, Status
+      deptSheet.appendRow([
+        candidate.name,
+        candidate.email,
+        candidate.phoneNumber || "",
+        candidate.workExperience || "",
+        candidate.ug || "",
+        candidate.pg || "",
+        candidate.college || "",
+        candidate.linkedin || "",
+        candidate.github || "",
+        candidate.status || "Interviewing"
+      ]);
+    }
+
+    return makeJsonResponse({ success: true, message: "Candidate created and routed to " + deptSheetName }, 200);
+
+  } catch (error) {
+    return makeJsonResponse({ success: false, message: "Failed to create candidate: " + error.toString() }, 500);
+  }
+}
+
+// REST Endpoint Helper: Trigger Resume Scan of designated Google Drive folder
+function handleProcessResumes(sheetId) {
+  try {
+    const count = processIncomingResumes(sheetId);
+    return makeJsonResponse({ success: true, message: "Processed " + count + " new resumes." }, 200);
+  } catch (error) {
+    return makeJsonResponse({ success: false, message: "Failed to process resumes: " + error.toString() }, 500);
+  }
+}
+
+/// Core setup helper to get or create folders dynamically using Advanced Drive Service
+function getOrCreateFolder(parentId, name) {
+  var query = `title = '${name}' and mimeType = 'application/vnd.google-apps.folder' and trashed = false`;
+  if (parentId) {
+    query += ` and '${parentId}' in parents`;
+  }
+  var list = Drive.Files.list({ q: query, maxResults: 1 });
+  if (list.items && list.items.length > 0) {
+    return list.items[0].id;
+  } else {
+    var resource = {
+      title: name,
+      mimeType: "application/vnd.google-apps.folder"
+    };
+    if (parentId) {
+      resource.parents = [{ id: parentId }];
+    }
+    var newFolder = Drive.Files.insert(resource);
+    return newFolder.id;
+  }
+}
+
+// Move file utility to archive processed resumes under Processed/[Source]/[Role]/ using Advanced Drive API
+function moveProcessedResume(fileId, sourceName, roleName, hrResumesFolderId) {
+  var processedFolderId = getOrCreateFolder(hrResumesFolderId, "Processed");
+  var sourceProcessedFolderId = getOrCreateFolder(processedFolderId, sourceName);
+  var roleProcessedFolderId = getOrCreateFolder(sourceProcessedFolderId, roleName);
+  
+  var file = Drive.Files.get(fileId);
+  var previousParents = file.parents.map(function(p) { return p.id; }).join(",");
+  
+  Drive.Files.update({ title: file.title }, fileId, null, {
+    addParents: roleProcessedFolderId,
+    removeParents: previousParents
+  });
+}
+
+function cleanUGDegree(line) {
+  if (!line) return "";
+  var cleaned = line
+    .replace(/\b\d{4}\s*(?:-|–|to)?\s*\d{4}\b/g, "")
+    .replace(/\b\d{4}\b/g, "")
+    .replace(/\b(?:gpa|cgpa|grade|score|marks?)\s*:\s*\d+(?:\.\d+)?\b/gi, "")
+    .replace(/\b\d+(?:\.\d+)?\s*(?:%|gpa|cgpa)\b/gi, "")
+    .trim();
+  var degreeMatch = cleaned.match(/\b(B\.?Tech|B\.?E|B\.?Sc|B\.?C|B\.?A|B\.?Com|B\.?B\.?A|Bachelor\s+of\s+[A-Za-z]+)\b/i);
+  if (degreeMatch) {
+    var degree = degreeMatch[1];
+    var afterPart = cleaned.substring(cleaned.indexOf(degree) + degree.length).trim();
+    afterPart = afterPart.replace(/^(?:in\s+|of\s+)/i, "").trim();
+    var parts = afterPart.split(/[,;\-—|]|\bat\b|\bfrom\b/i);
+    var major = parts[0] ? parts[0].trim() : "";
+    var normalizedDegree = degree.replace(/\./g, "");
+    if (normalizedDegree.toLowerCase() === "btech") normalizedDegree = "B.Tech";
+    else if (normalizedDegree.toLowerCase() === "be") normalizedDegree = "B.E";
+    else if (normalizedDegree.toLowerCase() === "bsc") normalizedDegree = "B.Sc";
+    else if (normalizedDegree.toLowerCase() === "ba") normalizedDegree = "B.A";
+    else if (normalizedDegree.toLowerCase() === "bcom") normalizedDegree = "B.Com";
+    else if (normalizedDegree.toLowerCase() === "bba") normalizedDegree = "B.B.A";
+    return major ? (normalizedDegree + " " + major).replace(/\s+/g, " ") : normalizedDegree;
+  }
+  return cleaned;
+}
+
+function cleanPGDegree(line) {
+  if (!line) return "";
+  var cleaned = line
+    .replace(/\b\d{4}\s*(?:-|–|to)?\s*\d{4}\b/g, "")
+    .replace(/\b\d{4}\b/g, "")
+    .replace(/\b(?:gpa|cgpa|grade|score|marks?)\s*:\s*\d+(?:\.\d+)?\b/gi, "")
+    .replace(/\b\d+(?:\.\d+)?\s*(?:%|gpa|cgpa)\b/gi, "")
+    .trim();
+  var degreeMatch = cleaned.match(/\b(M\.?Tech|M\.?E|M\.?Sc|M\.?A|M\.?Com|M\.?B\.?A|Master\s+of\s+[A-Za-z]+)\b/i);
+  if (degreeMatch) {
+    var degree = degreeMatch[1];
+    var afterPart = cleaned.substring(cleaned.indexOf(degree) + degree.length).trim();
+    afterPart = afterPart.replace(/^(?:in\s+|of\s+)/i, "").trim();
+    var parts = afterPart.split(/[,;\-—|]|\bat\b|\bfrom\b/i);
+    var major = parts[0] ? parts[0].trim() : "";
+    var normalizedDegree = degree.replace(/\./g, "");
+    if (normalizedDegree.toLowerCase() === "mtech") normalizedDegree = "M.Tech";
+    else if (normalizedDegree.toLowerCase() === "me") normalizedDegree = "M.E";
+    else if (normalizedDegree.toLowerCase() === "msc") normalizedDegree = "M.Sc";
+    else if (normalizedDegree.toLowerCase() === "ma") normalizedDegree = "M.A";
+    else if (normalizedDegree.toLowerCase() === "mcom") normalizedDegree = "M.Com";
+    else if (normalizedDegree.toLowerCase() === "mba") normalizedDegree = "MBA";
+    return major ? (normalizedDegree + " " + major).replace(/\s+/g, " ") : normalizedDegree;
+  }
+  return cleaned;
+}
+
+// Clean extracted college field, returning only the institution name
+function cleanCollegeName(line) {
+  if (!line) return "";
+  
+  // Remove tabs and dates/years (e.g. 2022 - 2026)
+  var cleaned = line
+    .replace(/\t/g, " ")
+    .replace(/\b\d{4}\s*(?:-|–|to)?\s*\d{4}\b/g, "")
+    .replace(/\b\d{4}\b/g, "")
+    .replace(/\b(?:gpa|cgpa|grade|score|marks?)\s*:\s*\d+(?:\.\d+)?\b/gi, "")
+    .replace(/\b\d+(?:\.\d+)?\s*(?:%|gpa|cgpa)\b/gi, "")
+    .trim();
+    
+  cleaned = cleaned
+    .replace(/\b(B\.?Tech|B\.?E|B\.?Sc|B\.?A|B\.?Com|B\.?B\.?A|M\.?Tech|M\.?E|M\.?Sc|M\.?A|M\.?Com|M\.?B\.?A|Bachelor|Master|Degree)\b(?:\s+in\s+[^,\-]+)?/gi, "")
+    .replace(/\b(Computer\s+Science|Engineering|Mechanical|Electrical|Civil|Electronics|Physics|Chemistry|Mathematics|Information\s+Technology|IT|AI|Data\s+Science|Business\s+Administration|Management)\b/gi, "")
+    .trim();
+    
+  cleaned = cleaned.replace(/^(?:at\s+|from\s+|in\s+)/i, "").trim();
+  
+  var parts = cleaned.split(/[,;\-—|]|\bat\b|\bfrom\b/i);
+  for (var i = 0; i < parts.length; i++) {
+    var p = parts[i].trim();
+    var pLower = p.toLowerCase();
+    if (pLower.indexOf("university") !== -1 || pLower.indexOf("college") !== -1 || 
+        pLower.indexOf("institute") !== -1 || pLower.indexOf("school") !== -1 || 
+        pLower.indexOf("academy") !== -1 || pLower.indexOf("vidyapeeth") !== -1 ||
+        pLower.indexOf("iit") !== -1 || pLower.indexOf("nit") !== -1 || pLower.indexOf("bits") !== -1) {
+      return p.replace(/\s+/g, " ");
+    }
+  }
+  
+  var finalClean = cleaned.split(/[,;\-—|]/)[0].trim();
+  return finalClean.replace(/\s+/g, " ");
+}
+
+// Calculate total experience in months (strictly numeric format string e.g. "12")
+function extractExperienceInMonths(text) {
+  if (!text) return "0";
+  
+  var totalMonths = 0;
+  var lines = text.split('\n');
+  var experienceKeywords = ["experience", "exp", "history", "work", "employment", "duration", "total"];
+  
+  // Contextual line matching
+  for (var i = 0; i < lines.length; i++) {
+    var line = lines[i].toLowerCase();
+    var hasKeyword = experienceKeywords.some(function(kw) {
+      return line.indexOf(kw) !== -1;
+    });
+    
+    if (hasKeyword) {
+      var yearMatch = lines[i].match(/(\d+(?:\.\d+)?)\s*(?:\+|-)?\s*(?:years?|yrs?|yr)\b/i);
+      if (yearMatch) {
+        var yrs = parseFloat(yearMatch[1]);
+        if (yrs > 0 && yrs < 45) {
+          totalMonths = Math.max(totalMonths, Math.round(yrs * 12));
+        }
+      }
+      
+      var monthMatch = lines[i].match(/(\d+)\s*(?:months?|mths?|mth)\b/i);
+      if (monthMatch) {
+        var mths = parseInt(monthMatch[1], 10);
+        if (mths > 0 && mths < 500) {
+          totalMonths = Math.max(totalMonths, mths);
+        }
+      }
+    }
+  }
+  
+  // Global matching if no context found
+  if (totalMonths === 0) {
+    var yearMatches = text.match(/(\d+(?:\.\d+)?)\s*(?:\+|-)?\s*(?:years?|yrs?)\b/gi);
+    if (yearMatches) {
+      for (var j = 0; j < yearMatches.length; j++) {
+        var numMatch = yearMatches[j].match(/(\d+(?:\.\d+)?)/);
+        if (numMatch) {
+          var yrs = parseFloat(numMatch[1]);
+          if (yrs > 0 && yrs < 45) {
+            totalMonths = Math.max(totalMonths, Math.round(yrs * 12));
+          }
+        }
+      }
+    }
+    
+    var monthMatches = text.match(/(\d+)\s*(?:months?|mths?)\b/gi);
+    if (monthMatches) {
+      for (var k = 0; k < monthMatches.length; k++) {
+        var numMatch = monthMatches[k].match(/(\d+)/);
+        if (numMatch) {
+          var mths = parseInt(numMatch[1], 10);
+          if (mths > 0 && mths < 500) {
+            totalMonths = Math.max(totalMonths, mths);
+          }
+        }
+      }
+    }
+  }
+  
+  // Fallback for internship
+  if (totalMonths === 0) {
+    var lowerText = text.toLowerCase();
+    if (lowerText.indexOf("intern") !== -1 || lowerText.indexOf("internship") !== -1) {
+      totalMonths = 3;
+    }
+  }
+  
+  return totalMonths.toString();
+}
+
+// Process new resumes under nested role subfolders using Advanced Drive API
+function processNewResumes(sheetId) {
+  Logger.log("[SCAN] processNewResumes() started.");
+  
+  var hrResumesFolderId;
+  var isConfiguredFolder = false;
+  
+  if (typeof RESUME_FOLDER_ID !== "undefined" && RESUME_FOLDER_ID && RESUME_FOLDER_ID !== "12345_PLACEHOLDER_FOLDER_ID_67890") {
+    hrResumesFolderId = RESUME_FOLDER_ID;
+    isConfiguredFolder = true;
+    Logger.log("[SCAN] Using configured RESUME_FOLDER_ID: " + RESUME_FOLDER_ID);
+  } else {
+    Logger.log("[SCAN] RESUME_FOLDER_ID is set to placeholder. Resolving or creating default 'HR Resumes' folder...");
+    hrResumesFolderId = getOrCreateFolder(null, "HR Resumes");
+    Logger.log("[SCAN] Default 'HR Resumes' folder resolved to ID: " + hrResumesFolderId);
+  }
+
+  // Get the exact folder path/metadata if possible
+  try {
+    var folderMetadata = Drive.Files.get(hrResumesFolderId);
+    Logger.log("[FOLDER] Root Folder ID: " + hrResumesFolderId + " | Title: " + folderMetadata.title + " | Path: /" + folderMetadata.title);
+  } catch (e) {
+    Logger.log("[ERROR] Failed to fetch root folder metadata: " + e.toString());
+  }
+
+  var sources = ["LinkedIn", "Other"];
+  var roles = ["AI Automation Engineer", "Web Developer", "Sustainability"];
+  var processedCount = 0;
+  
+  var ss = sheetId ? SpreadsheetApp.openById(sheetId) : SpreadsheetApp.getActiveSpreadsheet();
+  var masterSheet = ss.getSheetByName("Candidates");
+
+  sources.forEach(function(sourceName) {
+    Logger.log("[SCAN] Checking source directory: " + sourceName);
+    var sourceFolderId = getOrCreateFolder(hrResumesFolderId, sourceName);
+    Logger.log("[FOLDER] Source Folder Name: " + sourceName + " | ID: " + sourceFolderId + " | Path: /" + (isConfiguredFolder ? "ConfiguredFolder" : "HR Resumes") + "/" + sourceName);
+    
+    roles.forEach(function(roleName) {
+      Logger.log("[SCAN] Checking role directory: " + roleName);
+      var roleFolderId = getOrCreateFolder(sourceFolderId, roleName);
+      Logger.log("[FOLDER] Role Folder Name: " + roleName + " | ID: " + roleFolderId + " | Path: /" + (isConfiguredFolder ? "ConfiguredFolder" : "HR Resumes") + "/" + sourceName + "/" + roleName);
+      
+      // List all files in the role folder using Advanced Drive Service
+      var filesResult = Drive.Files.list({
+        q: `'${roleFolderId}' in parents and trashed = false`
+      });
+      var tempFiles = filesResult.items || [];
+      
+      Logger.log("[FOLDER] Discovered subfolder contents. Role folder: " + roleName + " (ID: " + roleFolderId + ") contains " + tempFiles.length + " files.");
+      
+      tempFiles.forEach(function(file) {
+        var fileId = file.id;
+        var mimeType = file.mimeType;
+        var fileName = file.title;
+        Logger.log("[FILE] Found File Name: " + fileName + " | ID: " + fileId + " | MIME Type: " + mimeType);
+        
+        var isPDF = mimeType === "application/pdf";
+        var isDOCX = mimeType === "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
+        
+        var passesValidation = isPDF || isDOCX;
+        Logger.log("[FILE] File Validation check: passesValidation = " + passesValidation + " (isPDF=" + isPDF + ", isDOCX=" + isDOCX + ")");
+        
+        if (!passesValidation) {
+          Logger.log("[SKIPPED] File skipped: Name: " + fileName + " | ID: " + fileId + " | Reason: Unsupported file type. Only PDF/DOCX are allowed. MIME was: " + mimeType);
+          return;
+        }
+        
+        Logger.log("[SCAN] Processing resume file: " + fileName + " under " + sourceName + "/" + roleName);
+        
+        try {
+          var rawText = "";
+          if (isPDF) {
+            rawText = extractTextFromPDF(fileId);
+          } else if (isDOCX) {
+            rawText = extractTextFromDOCX(fileId);
+          }
+          
+          if (rawText) {
+            Logger.log("[SCAN] Text successfully extracted from " + fileName + ". Extract character length: " + rawText.length);
+            var textSnippet = rawText.substring(0, Math.min(200, rawText.length)).replace(/\n/g, " ");
+            Logger.log("[SCAN] Text snippet: " + textSnippet);
+
+            var details = parseCandidateDetails(rawText);
+            details.resumeFileId = fileId;
+            details.source = sourceName;
+            details.role = roleName;
+            details.status = "On Hold";
+            details.emailStatus = "Pending";
+            
+            if (!details.name) {
+              details.name = fileName.replace(/\.[^/.]+$/, "");
+            }
+            
+            Logger.log("[SCAN] Parsed candidate details: " + JSON.stringify(details));
+            
+            var emailToCheck = details.email ? details.email.trim().toLowerCase() : "";
+            var emailExists = false;
+            
+            if (emailToCheck) {
+              var masterData = masterSheet.getDataRange().getValues();
+              for (var i = 1; i < masterData.length; i++) {
+                if (masterData[i][1] && masterData[i][1].toString().trim().toLowerCase() === emailToCheck) {
+                  emailExists = true;
+                  break;
+                }
+              }
+            }
+            
+            if (emailExists) {
+              Logger.log("[SKIPPED] File skipped: Name: " + fileName + " | ID: " + fileId + " | Reason: Duplicate candidate email (" + details.email + ") already exists in Candidates sheet.");
+              moveProcessedResume(fileId, sourceName, roleName, hrResumesFolderId);
+              Logger.log("[PROCESSED] Moved duplicate file " + fileName + " (ID: " + fileId + ") to Processed folder.");
+              return;
+            }
+            
+            if (!details.email) {
+              details.email = "no-email-found-" + fileId.substring(0, 6) + "@example.com";
+              Logger.log("[WARNING] No email found in resume. Using placeholder: " + details.email);
+            }
+            
+            // Append candidate and route to sheets
+            Logger.log("[SCAN] Creating candidate in sheets...");
+            var createRes = handleCreateCandidate(sheetId, details);
+            Logger.log("[SCAN] Sheet creation result: " + JSON.stringify(createRes));
+            Logger.log("[PROCESSED] Successfully created candidate: Name: " + details.name + " | Email: " + details.email + " | Role: " + details.role);
+            
+            // Move file to Processed folder
+            Logger.log("[SCAN] Archiving file to Processed...");
+            moveProcessedResume(fileId, sourceName, roleName, hrResumesFolderId);
+            Logger.log("[PROCESSED] Moved file " + fileName + " (ID: " + fileId + ") to Processed folder.");
+            
+            processedCount++;
+          } else {
+            Logger.log("[SKIPPED] File skipped: Name: " + fileName + " | ID: " + fileId + " | Reason: Extracted text is empty or conversion failed.");
+          }
+        } catch (err) {
+          Logger.log("[ERROR] Exception processing file: " + fileName + " | ID: " + fileId + " | Error: " + err.toString());
+        }
+      });
+    });
+  });
+  
+  Logger.log("[SCAN] processNewResumes() complete. Total processed: " + processedCount);
+  return processedCount;
+}
+
+// REST wrapper entry point mapped to the Web App interface (retains old name for backward compatibility)
+function processIncomingResumes(sheetId) {
+  return processNewResumes(sheetId);
+}
+
+// Convert PDF to Google Doc temporarily via OCR, read text, and clean up
+function extractTextFromPDF(fileId) {
+  var file = DriveApp.getFileById(fileId);
+  var blob = file.getBlob();
+
+  var resource = {
+    title: "TempOCR_" + fileId,
+    mimeType: blob.getMimeType()
+  };
+
+  var tempFile = Drive.Files.insert(resource, blob, { ocr: true });
+  var tempDoc = DocumentApp.openById(tempFile.id);
+  var text = tempDoc.getBody().getText();
+
+  Drive.Files.remove(tempFile.id);
+  return text;
+}
+
+// Convert DOCX to Google Doc temporarily, read text, and clean up
+function extractTextFromDOCX(fileId) {
+  var file = DriveApp.getFileById(fileId);
+  var blob = file.getBlob();
+
+  var resource = {
+    title: "TempDOCX_" + fileId,
+    mimeType: MimeType.GOOGLE_DOCS
+  };
+
+  var tempFile = Drive.Files.insert(resource, blob);
+  var tempDoc = DocumentApp.openById(tempFile.id);
+  var text = tempDoc.getBody().getText();
+
+  Drive.Files.remove(tempFile.id);
+  return text;
+}
+
+// Regular expressions and scores mapping to parse resume details
+function parseCandidateDetails(text) {
+  var details = {
+    name: "",
+    email: "",
+    phoneNumber: "",
+    location: "",
+    college: "",
+    ug: "",
+    pg: "",
+    workExperience: "",
+    linkedin: "",
+    github: "",
+    role: "Sustainability" // default fallback
+  };
+
+  var lines = text.split('\n').map(function (line) { return line.trim(); }).filter(Boolean);
+
+  // Name Heuristic: Grab first non-header line
+  if (lines.length > 0) {
+    details.name = lines[0];
+    if (details.name.toLowerCase().indexOf("resume") !== -1 || details.name.toLowerCase().indexOf("cv") !== -1) {
+      if (lines.length > 1) {
+        details.name = lines[1];
+      }
+    }
+  }
+
+  // Email regex
+  var emailRegex = /[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/;
+  var emailMatch = text.match(emailRegex);
+  if (emailMatch) {
+    details.email = emailMatch[0];
+  }
+
+  // Phone regex
+  var phoneRegex = /(\+?\d{1,3}[-.\s]?)?\(?\d{3}\)?[-.\s]?\d{3}[-.\s]?\d{4}/;
+  var phoneMatch = text.match(phoneRegex);
+  if (phoneMatch) {
+    details.phoneNumber = phoneMatch[0];
+  }
+
+  // LinkedIn and GitHub regex
+  var linkedinRegex = /linkedin\.com\/in\/[a-zA-Z0-9_-]+/;
+  var linkedinMatch = text.match(linkedinRegex);
+  if (linkedinMatch) {
+    details.linkedin = "https://" + linkedinMatch[0];
+  }
+
+  var githubRegex = /github\.com\/[a-zA-Z0-9_-]+/;
+  var githubMatch = text.match(githubRegex);
+  if (githubMatch) {
+    details.github = "https://" + githubMatch[0];
+  }
+
+  // Line loops for location, education, and college keywords
+  for (var i = 0; i < lines.length; i++) {
+    var line = lines[i];
+    var lower = line.toLowerCase();
+
+    if (!details.ug && (lower.indexOf("bachelor") !== -1 || lower.indexOf("b.sc") !== -1 || lower.indexOf("b.e") !== -1 || lower.indexOf("b.tech") !== -1 || lower.indexOf("ug:") !== -1 || lower.indexOf("undergraduate") !== -1)) {
+      details.ug = cleanUGDegree(line);
+    }
+
+    if (!details.pg && (lower.indexOf("master") !== -1 || lower.indexOf("m.sc") !== -1 || lower.indexOf("m.e") !== -1 || lower.indexOf("m.tech") !== -1 || lower.indexOf("pg:") !== -1 || lower.indexOf("postgraduate") !== -1 || lower.indexOf("mba") !== -1)) {
+      details.pg = cleanPGDegree(line);
+    }
+
+    if (!details.college && (lower.indexOf("college") !== -1 || lower.indexOf("university") !== -1 || lower.indexOf("institute") !== -1)) {
+      details.college = cleanCollegeName(line);
+    }
+  }
+
+  // Fallback pattern lookups
+  if (!details.location) {
+    var locMatch = text.match(/location\s*:\s*([^\n]+)/i);
+    if (locMatch) details.location = locMatch[1].trim();
+  }
+
+  if (!details.college) {
+    var collMatch = text.match(/(?:college|university)\s*:\s*([^\n]+)/i);
+    if (collMatch) details.college = cleanCollegeName(collMatch[1]);
+  }
+
+  // Work experience extraction (months)
+  details.workExperience = extractExperienceInMonths(text);
+
+  return details;
+}
+
+// Scheduled Trigger cleanup function: moves resume files older than 15 days from Processed folders to trash
+function cleanupOldResumes() {
+  var hrResumesFolderId;
+  
+  if (typeof RESUME_FOLDER_ID !== "undefined" && RESUME_FOLDER_ID && RESUME_FOLDER_ID !== "12345_PLACEHOLDER_FOLDER_ID_67890") {
+    hrResumesFolderId = RESUME_FOLDER_ID;
+  } else {
+    var searchResult = Drive.Files.list({
+      q: "title = 'HR Resumes' and mimeType = 'application/vnd.google-apps.folder' and trashed = false",
+      maxResults: 1
+    });
+    if (searchResult.items && searchResult.items.length > 0) {
+      hrResumesFolderId = searchResult.items[0].id;
+    } else {
+      Logger.log("HR Resumes folder not found. Cleanup skipped.");
+      return;
+    }
+  }
+
+  var processedFolderId;
+  var processedSearch = Drive.Files.list({
+    q: `title = 'Processed' and '${hrResumesFolderId}' in parents and mimeType = 'application/vnd.google-apps.folder' and trashed = false`,
+    maxResults: 1
+  });
+  if (processedSearch.items && processedSearch.items.length > 0) {
+    processedFolderId = processedSearch.items[0].id;
+  } else {
+    Logger.log("Processed folder not found. Cleanup skipped.");
+    return;
+  }
+
+  var sources = ["LinkedIn", "Other"];
+  var roles = ["AI Automation Engineer", "Web Developer", "Sustainability"];
+  var deletedCount = 0;
+
+  sources.forEach(function(sourceName) {
+    var sourceSearch = Drive.Files.list({
+      q: `title = '${sourceName}' and '${processedFolderId}' in parents and mimeType = 'application/vnd.google-apps.folder' and trashed = false`,
+      maxResults: 1
+    });
+    if (sourceSearch.items && sourceSearch.items.length > 0) {
+      var sourceFolderId = sourceSearch.items[0].id;
+      roles.forEach(function(roleName) {
+        var roleSearch = Drive.Files.list({
+          q: `title = '${roleName}' and '${sourceFolderId}' in parents and mimeType = 'application/vnd.google-apps.folder' and trashed = false`,
+          maxResults: 1
+        });
+        if (roleSearch.items && roleSearch.items.length > 0) {
+          deletedCount += deleteOldFilesFromFolder(roleSearch.items[0].id, 15);
+        }
+      });
+    }
+  });
+
+  Logger.log("[CLEANUP] Deleted " + deletedCount + " processed resumes older than 15 days.");
+}
+
+function deleteOldFilesFromFolder(folderId, ageInDays) {
+  var filesResult = Drive.Files.list({
+    q: `'${folderId}' in parents and trashed = false`
+  });
+  var now = new Date();
+  var limitMs = ageInDays * 24 * 60 * 60 * 1000;
+  var deleteCount = 0;
+
+  if (filesResult.items) {
+    filesResult.items.forEach(function(file) {
+      var createdDate = new Date(file.createdDate);
+      if (now.getTime() - createdDate.getTime() > limitMs) {
+        Logger.log("[FILE DELETED] Processed resume file " + file.title + " deleted (older than " + ageInDays + " days).");
+        Drive.Files.trash(file.id);
+        deleteCount++;
+      }
+    });
+  }
+  return deleteCount;
+}
+
+/**
+ * One-time data migration function.
+ * Select this function in the Apps Script editor toolbar and click "Run".
+ * After running, this function can be safely deleted or ignored.
+ */
+function runExistingDataRepair() {
+  const sheetId = "1KmEOk4qn0gF8pAbBUNCcrXuw2U4P3x18eVLAUxe1vtM";
+  const ss = SpreadsheetApp.openById(sheetId);
+  var allowedStatuses = ['Selected', 'Interviewing', 'On Hold', 'Rejected'];
+
+  // 1. Repair Candidates Sheet
+  const masterSheet = ss.getSheetByName("Candidates");
+  if (masterSheet) {
+    var lastCol = masterSheet.getLastColumn();
+    if (lastCol > 7) {
+      masterSheet.getRange(1, 8, masterSheet.getLastRow(), lastCol - 7).clearContent();
+    }
+    const data = masterSheet.getDataRange().getValues();
+    for (let i = 1; i < data.length; i++) {
+      const row = data[i];
+      var status = row[4] ? row[4].toString().trim() : "";
+      if (status === "Applied" || status === "Shortlisted" || status === "Scheduled") {
+        status = "Interviewing";
+      } else if (status === "Maybe") {
+        status = "On Hold";
+      } else if (status === "Not Selected") {
+        status = "Rejected";
+      } else if (allowedStatuses.indexOf(status) === -1) {
+        status = "Interviewing";
+      }
+      masterSheet.getRange(i + 1, 5).setValue(status);
+
+      var emailStatus = row[5] ? row[5].toString().trim() : "Pending";
+      if (emailStatus !== "Sent" && emailStatus !== "Pending" && emailStatus !== "Failed") {
+        emailStatus = "Pending";
+      }
+      masterSheet.getRange(i + 1, 6).setValue(emailStatus);
+    }
+  }
+
+  // 2. Repair Department Sheets
+  const sheets = ss.getSheets();
+  for (let k = 0; k < sheets.length; k++) {
+    const sheet = sheets[k];
+    const name = sheet.getName();
+    if (name !== "Candidates" && name !== "ProcessedResumes" && name !== "ProcessedResumesLog") {
+      var lastCol = sheet.getLastColumn();
+      if (lastCol > 10) {
+        sheet.getRange(1, 11, sheet.getLastRow(), lastCol - 10).clearContent();
+      }
+
+      var range = sheet.getDataRange();
+      var data = range.getValues();
+      if (data.length <= 1) continue;
+
+      sheet.getRange(2, 1, sheet.getLastRow() - 1, 10).clearContent();
+
+      sheet.getRange(1, 1, 1, 10).setValues([[
+        "Candidate Name",
+        "Email",
+        "Phone Number",
+        "Work Experience",
+        "UG",
+        "PG",
+        "College",
+        "LinkedIn",
+        "GitHub",
+        "Status"
+      ]]);
+
+      for (let j = 1; j < data.length; j++) {
+        var row = data[j];
+        var cName = "";
+        var email = "";
+        var phone = "";
+        var exp = "0";
+        var ug = "";
+        var pg = "";
+        var college = "";
+        var linkedin = "";
+        var github = "";
+        var status = "Interviewing";
+
+        row.forEach(function(cell) {
+          if (cell === null || cell === undefined) return;
+          var val = cell.toString().trim();
+          if (!val) return;
+
+          if (val.indexOf("@") !== -1 && val.indexOf(".") !== -1) {
+            email = val;
+          } else if (val.indexOf("linkedin.com") !== -1) {
+            linkedin = val;
+            if (linkedin && !linkedin.startsWith("http")) linkedin = "https://" + linkedin;
+          } else if (val.indexOf("github.com") !== -1) {
+            github = val;
+            if (github && !github.startsWith("http")) github = "https://" + github;
+          } else if (allowedStatuses.indexOf(val) !== -1) {
+            status = val;
+          } else if (val === "Applied" || val === "Shortlisted" || val === "Scheduled") {
+            status = "Interviewing";
+          } else if (val === "Maybe") {
+            status = "On Hold";
+          } else if (val === "Not Selected") {
+            status = "Rejected";
+          } else if (/^\+?\d[\d\s\-\(\)]+$/.test(val) && val.replace(/\D/g, "").length >= 7) {
+            phone = val;
+          } else if (/\b(b\.?tech|b\.?e|b\.?sc|b\.?c|b\.?a|b\.?com|b\.?b\.?a|bachelor)/i.test(val)) {
+            ug = cleanUGDegree(val);
+          } else if (/\b(m\.?tech|m\.?e|m\.?sc|m\.?a|m\.?com|m\.?b\.?a|master|mba)/i.test(val)) {
+            pg = cleanPGDegree(val);
+          } else if (/\b(university|college|institute|school|academy|vidyapeeth|iit|nit|bits)/i.test(val)) {
+            college = cleanCollegeName(val);
+          }
+        });
+
+        if (!cName && row[0]) cName = row[0].toString().trim();
+        if (!email && row[1]) email = row[1].toString().trim();
+        
+        var rawExp = row[3] ? row[3].toString().trim() : "";
+        if (rawExp) {
+          var numMatch = rawExp.match(/\d+/);
+          if (numMatch) {
+            exp = numMatch[0];
+          } else {
+            exp = "0";
+          }
+        }
+
+        sheet.getRange(j + 1, 1, 1, 10).setValues([[
+          cName,
+          email,
+          phone,
+          exp,
+          ug,
+          pg,
+          college,
+          linkedin,
+          github,
+          status
+        ]]);
+      }
+    }
+  }
+  Logger.log("Data repair completed successfully.");
+}
+
+function runDataMigration() {
+  runExistingDataRepair();
+}
