@@ -2204,93 +2204,314 @@ function cleanLineToDegree(line, isPG) {
   return "";
 }
 
-function extractUG(text) {
+function stripInformationalSections(text) {
+  var lines = text.split('\n');
+  var infoHeaders = [
+    /^\s*about\s+me\s*$/i,
+    /^\s*summary\s*$/i,
+    /^\s*professional\s+summary\s*$/i,
+    /^\s*objective\s*$/i,
+    /^\s*profile\s*$/i,
+    /^\s*contact\s*$/i,
+    /^\s*contact\s+information\s*$/i,
+    /^\s*personal\s+details\s*$/i
+  ];
+  
+  var sectionHeaders = [
+    /^\s*education\s*$/i,
+    /^\s*academic\s+background\s*$/i,
+    /^\s*educational\s+qualifications\s*$/i,
+    /^\s*qualifications\s*$/i,
+    /^\s*work\s+experience\s*$/i,
+    /^\s*experience\s*$/i,
+    /^\s*projects\s*$/i,
+    /^\s*skills\s*$/i,
+    /^\s*certifications\s*$/i
+  ];
+  
+  var outputLines = [];
+  var skipping = false;
+  
+  for (var i = 0; i < lines.length; i++) {
+    var lineClean = lines[i].trim();
+    if (!lineClean) {
+      if (!skipping) outputLines.push(lines[i]);
+      continue;
+    }
+    
+    var isInfo = false;
+    for (var h = 0; h < infoHeaders.length; h++) {
+      if (infoHeaders[h].test(lineClean)) {
+        isInfo = true;
+        break;
+      }
+    }
+    
+    if (isInfo) {
+      skipping = true;
+      continue;
+    }
+    
+    var isSection = false;
+    for (var s = 0; s < sectionHeaders.length; s++) {
+      if (sectionHeaders[s].test(lineClean)) {
+        isSection = true;
+        break;
+      }
+    }
+    
+    if (isSection) {
+      skipping = false;
+    }
+    
+    if (!skipping) {
+      outputLines.push(lines[i]);
+    }
+  }
+  
+  return outputLines.join('\n');
+}
+
+function getEducationSection(text) {
+  var lines = text.split('\n');
+  var startIdx = -1;
+  var endIdx = -1;
+  
+  var eduHeaders = [
+    /^\s*education\s*$/i,
+    /^\s*academic\s+background\s*$/i,
+    /^\s*educational\s+qualifications\s*$/i,
+    /^\s*qualifications\s*$/i
+  ];
+  
+  var nextSectionHeaders = [
+    /^\s*work\s+experience\s*$/i,
+    /^\s*experience\s*$/i,
+    /^\s*projects\s*$/i,
+    /^\s*skills\s*$/i,
+    /^\s*certifications\s*$/i,
+    /^\s*about\s+me\s*$/i,
+    /^\s*summary\s*$/i,
+    /^\s*professional\s+summary\s*$/i,
+    /^\s*objective\s*$/i,
+    /^\s*profile\s*$/i
+  ];
+
+  for (var i = 0; i < lines.length; i++) {
+    var lineClean = lines[i].trim();
+    if (!lineClean) continue;
+    
+    var isEduHeader = false;
+    for (var h = 0; h < eduHeaders.length; h++) {
+      if (eduHeaders[h].test(lineClean)) {
+        isEduHeader = true;
+        break;
+      }
+    }
+    
+    if (isEduHeader) {
+      startIdx = i;
+      break;
+    }
+  }
+  
+  if (startIdx === -1) {
+    var eduHeadersLoose = [
+      /\beducation\b/i,
+      /\bacacademic\s+background\b/i,
+      /\beducational\s+qualifications\b/i,
+      /\bqualifications\b/i
+    ];
+    for (var i = 0; i < lines.length; i++) {
+      var lineClean = lines[i].trim();
+      var isEduHeader = false;
+      for (var h = 0; h < eduHeadersLoose.length; h++) {
+        if (eduHeadersLoose[h].test(lineClean)) {
+          isEduHeader = true;
+          break;
+        }
+      }
+      if (isEduHeader) {
+        startIdx = i;
+        break;
+      }
+    }
+  }
+  
+  if (startIdx === -1) {
+    return "";
+  }
+  
+  for (var i = startIdx + 1; i < lines.length; i++) {
+    var lineClean = lines[i].trim();
+    if (!lineClean) continue;
+    
+    var isNextHeader = false;
+    for (var n = 0; n < nextSectionHeaders.length; n++) {
+      if (nextSectionHeaders[n].test(lineClean)) {
+        isNextHeader = true;
+        break;
+      }
+    }
+    
+    if (isNextHeader) {
+      endIdx = i;
+      break;
+    }
+  }
+  
+  var eduLines = [];
+  var endLimit = (endIdx !== -1) ? endIdx : lines.length;
+  for (var i = startIdx + 1; i < endLimit; i++) {
+    eduLines.push(lines[i]);
+  }
+  
+  return eduLines.join('\n').trim();
+}
+
+function isPGDegree(degree) {
+  var pgRegex = /\b(m\.?tech|m\.?e|m\.?sc|m\.?c\.?a|m\.?a|m\.?com|m\.?b\.?a|master|postgraduate|pgdm|pg)\b/i;
+  return pgRegex.test(degree);
+}
+
+function isUGDegree(degree) {
+  var ugRegex = /\b(b\.?tech|b\.?e|b\.?sc|b\.?c\.?a|b\.?a|b\.?com|b\.?b\.?a|bachelor|undergraduate|ug)\b/i;
+  return ugRegex.test(degree);
+}
+
+function parseEducationEntries(eduText) {
+  if (!eduText) return [];
+  
+  var lines = eduText.split('\n').map(function(l) { return l.trim(); }).filter(Boolean);
+  var entries = [];
+  
+  var collegeKeywords = /\b(university|college|institute|school|academy|vidyapeeth|iit|nit|bits|zell|institution|deemed|center|centre|medical|technological|polytechnic)\b/i;
+  
   var ugRegex = /\b(b\.?tech|b\.?e|b\.?sc|b\.?c\.?a|b\.?a|b\.?com|b\.?b\.?a|bachelor|undergraduate|ug)\b/i;
   var pgRegex = /\b(m\.?tech|m\.?e|m\.?sc|m\.?c\.?a|m\.?a|m\.?com|m\.?b\.?a|master|postgraduate|pgdm|pg)\b/i;
-  var lines = text.split('\n').map(function(l) { return l.trim(); }).filter(Boolean);
   
-  for (var i = 0; i < lines.length; i++) {
-    var line = lines[i];
-    if (ugRegex.test(line)) {
-      if (pgRegex.test(line)) {
-        continue;
-      }
-      var cleaned = cleanLineToDegree(line, false);
-      if (cleaned) return cleaned;
-    }
-  }
-  return "";
-}
-
-function extractPG(text) {
-  var pgRegex = /\b(m\.?tech|m\.?e|m\.?sc|m\.?c\.?a|m\.?a|m\.?com|m\.?b\.?a|master|postgraduate|pgdm|pg)\b/i;
-  var lines = text.split('\n').map(function(l) { return l.trim(); }).filter(Boolean);
+  var yearRangeRegex = /\b(19\d{2}|20\d{2})\s*[-–\/\s(to)]+\s*(19\d{2}|20\d{2})\b/;
+  var singleYearRegex = /\b(19\d{2}|20\d{2})\b/;
   
-  for (var i = 0; i < lines.length; i++) {
-    var line = lines[i];
-    if (pgRegex.test(line)) {
-      if (/\babout\s+me\b/i.test(line) || /\bcontact\s+me\b/i.test(line)) {
-        continue;
-      }
-      var cleaned = cleanLineToDegree(line, true);
-      if (cleaned) return cleaned;
-    }
-  }
-  return "";
-}
-
-function extractCollege(text) {
-  var lines = text.split('\n').map(function(l) { return l.trim(); }).filter(Boolean);
-  var collegeKeywords = /\b(university|college|institute|school|academy|vidyapeeth|iit|nit|bits|zell|institution|deemed)\b/i;
+  var matchedLines = {};
   
-  var colleges = [];
   for (var i = 0; i < lines.length; i++) {
     var line = lines[i];
     if (collegeKeywords.test(line)) {
-      var cleaned = cleanCollegeName(line);
-      if (cleaned && cleaned.length >= 5) {
-        var year = "";
-        var yearRangeRegex = /\b(19\d{2}|20\d{2})\s*[-–\/\s(to)]+\s*(19\d{2}|20\d{2})\b/;
-        var singleYearRegex = /\b(19\d{2}|20\d{2})\b/;
+      var collegeName = cleanCollegeName(line);
+      if (collegeName && collegeName.length >= 5) {
+        matchedLines[i] = true;
         
-        var mRange = line.match(yearRangeRegex);
-        if (mRange) {
-          year = mRange[0].replace(/\s+/g, " ");
-        } else {
-          var mSingle = line.match(singleYearRegex);
-          if (mSingle) {
-            year = mSingle[1];
-          } else {
-            if (i < lines.length - 1) {
-              var nextLine = lines[i+1];
-              var mRangeNext = nextLine.match(yearRangeRegex);
-              if (mRangeNext) {
-                year = mRangeNext[0].replace(/\s+/g, " ");
-              } else {
-                var mSingleNext = nextLine.match(singleYearRegex);
-                if (mSingleNext) {
-                  year = mSingleNext[1];
-                }
+        var degreeVal = "";
+        var yearVal = "";
+        
+        var minWindow = Math.max(0, i - 2);
+        var maxWindow = Math.min(lines.length - 1, i + 2);
+        
+        for (var j = minWindow; j <= maxWindow; j++) {
+          var yRangeMatch = lines[j].match(yearRangeRegex);
+          if (yRangeMatch) {
+            yearVal = yRangeMatch[0].replace(/\s+/g, " ");
+            matchedLines[j] = true;
+            break;
+          }
+        }
+        if (!yearVal) {
+          for (var j = minWindow; j <= maxWindow; j++) {
+            var ySingleMatch = lines[j].match(singleYearRegex);
+            if (ySingleMatch) {
+              yearVal = ySingleMatch[1];
+              matchedLines[j] = true;
+              break;
+            }
+          }
+        }
+        
+        for (var j = minWindow; j <= maxWindow; j++) {
+          var ln = lines[j];
+          if (pgRegex.test(ln) && !/\babout\s+me\b/i.test(ln) && !/\bcontact\s+me\b/i.test(ln)) {
+            var cleaned = cleanLineToDegree(ln, true);
+            if (cleaned) {
+              degreeVal = cleaned;
+              matchedLines[j] = true;
+              break;
+            }
+          }
+        }
+        if (!degreeVal) {
+          for (var j = minWindow; j <= maxWindow; j++) {
+            var ln = lines[j];
+            if (ugRegex.test(ln)) {
+              var cleaned = cleanLineToDegree(ln, false);
+              if (cleaned) {
+                degreeVal = cleaned;
+                matchedLines[j] = true;
+                break;
               }
             }
           }
         }
         
-        var collegeVal = cleaned;
-        if (year) {
-          collegeVal = cleaned + " (" + year + ")";
+        var type = "UG";
+        if (degreeVal && isPGDegree(degreeVal)) {
+          type = "PG";
+        } else if (degreeVal && isUGDegree(degreeVal)) {
+          type = "UG";
         }
-        colleges.push(collegeVal);
+        
+        entries.push({
+          institution: collegeName,
+          degree: degreeVal,
+          year: yearVal,
+          type: type
+        });
       }
     }
   }
   
-  if (colleges.length > 0) {
-    return colleges[0];
+  for (var i = 0; i < lines.length; i++) {
+    if (matchedLines[i]) continue;
+    var line = lines[i];
+    
+    var isPG = pgRegex.test(line) && !/\babout\s+me\b/i.test(line) && !/\bcontact\s+me\b/i.test(line);
+    var isUG = ugRegex.test(line);
+    
+    if (isPG || isUG) {
+      var cleanedDegree = cleanLineToDegree(line, isPG);
+      if (cleanedDegree) {
+        var yearVal = "";
+        var minWindow = Math.max(0, i - 1);
+        var maxWindow = Math.min(lines.length - 1, i + 1);
+        for (var j = minWindow; j <= maxWindow; j++) {
+          var yRangeMatch = lines[j].match(yearRangeRegex);
+          if (yRangeMatch) {
+            yearVal = yRangeMatch[0].replace(/\s+/g, " ");
+            break;
+          }
+        }
+        if (!yearVal) {
+          for (var j = minWindow; j <= maxWindow; j++) {
+            var ySingleMatch = lines[j].match(singleYearRegex);
+            if (ySingleMatch) {
+              yearVal = ySingleMatch[1];
+              break;
+            }
+          }
+        }
+        
+        entries.push({
+          institution: "",
+          degree: cleanedDegree,
+          year: yearVal,
+          type: isPG ? "PG" : "UG"
+        });
+      }
+    }
   }
   
-  return "";
+  return entries;
 }
+
 
 function extractLocation(text) {
   var cities = [
@@ -2401,13 +2622,70 @@ function parseCandidateDetails(text, links) {
   // 3. Phone extraction & normalization
   details.phoneNumber = extractAndNormalizePhone(text);
 
-  // 4. Independent dedicated extractions
-  details.ug = extractUG(text);
-  details.pg = extractPG(text);
-  details.college = extractCollege(text);
+  // 4. Location extraction
   details.location = extractLocation(text);
+
+  // 5. LinkedIn and GitHub extractions
   details.linkedin = extractLinkedIn(text, links);
   details.github = extractGitHub(text, links);
+
+  // 6. Education parsing (Using double-layered sectioning and structured entries)
+  var cleanedText = stripInformationalSections(text);
+  var eduText = getEducationSection(cleanedText);
+  if (!eduText) {
+    eduText = cleanedText;
+  }
+  
+  var eduEntries = parseEducationEntries(eduText);
+  
+  var selectedUG = "";
+  var selectedPG = "";
+  var selectedCollege = "";
+  var selectedCollegeYear = "";
+  
+  var ugEntry = null;
+  var pgEntry = null;
+  
+  for (var i = 0; i < eduEntries.length; i++) {
+    var entry = eduEntries[i];
+    if (entry.type === "UG" && !ugEntry) {
+      ugEntry = entry;
+    }
+    if (entry.type === "PG" && !pgEntry) {
+      pgEntry = entry;
+    }
+  }
+  
+  if (ugEntry) {
+    selectedUG = ugEntry.degree;
+  }
+  if (pgEntry) {
+    selectedPG = pgEntry.degree;
+  }
+  
+  var highestEntry = pgEntry || ugEntry;
+  if (highestEntry) {
+    selectedCollege = highestEntry.institution;
+    selectedCollegeYear = highestEntry.year;
+    
+    // Fallback to other entry's college if highest entry's college is blank
+    if (!selectedCollege) {
+      var otherEntry = (highestEntry === pgEntry) ? ugEntry : pgEntry;
+      if (otherEntry && otherEntry.institution) {
+        selectedCollege = otherEntry.institution;
+        selectedCollegeYear = otherEntry.year;
+      }
+    }
+  }
+  
+  var collegeField = selectedCollege;
+  if (selectedCollege && selectedCollegeYear) {
+    collegeField = selectedCollege + " (" + selectedCollegeYear + ")";
+  }
+  
+  details.ug = selectedUG;
+  details.pg = selectedPG;
+  details.college = collegeField;
 
   return details;
 }
