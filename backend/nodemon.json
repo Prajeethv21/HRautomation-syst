@@ -1,0 +1,14 @@
+{
+  "watch": [
+    "index.js",
+    "routes/",
+    "middleware/",
+    "services/"
+  ],
+  "ignore": [
+    "database.json",
+    "database.json.tmp",
+    "node_modules/"
+  ],
+  "ext": "js,json"
+}
