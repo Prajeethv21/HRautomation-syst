@@ -1,17 +1,24 @@
 import React, { useState } from 'react';
 import { NavLink } from 'react-router-dom';
-import { LayoutDashboard, Users, ChevronLeft, ChevronRight, Building2, ChevronDown } from 'lucide-react';
+import { LayoutDashboard, Users, ChevronLeft, ChevronRight, Building2, ChevronDown, Shield, LogOut } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { DEPARTMENTS } from '../config/departments';
+import { useAuth } from '../context/AuthContext';
+
 
 const Sidebar: React.FC = () => {
   const [isCollapsed, setIsCollapsed] = useState(false);
   const [isDeptsOpen, setIsDeptsOpen] = useState(true);
+  const { user, logout } = useAuth();
 
   const navItems = [
     { name: 'Dashboard', path: '/dashboard', icon: LayoutDashboard },
     { name: 'Candidates', path: '/candidates', icon: Users },
   ];
+
+  if (user?.role === 'ADMIN') {
+    navItems.push({ name: 'Admin Panel', path: '/admin', icon: Shield });
+  }
 
   return (
     <motion.aside
@@ -144,6 +151,28 @@ const Sidebar: React.FC = () => {
           </AnimatePresence>
         </div>
       </nav>
+
+      {/* User & Logout Section */}
+      {user && (
+        <div className="p-3 border-t border-brand-border bg-gray-50/50 space-y-2 select-none">
+          {!isCollapsed && (
+            <div className="px-2 py-1">
+              <p className="text-xs font-bold text-brand-text truncate">{user.name}</p>
+              <p className="text-[10px] text-gray-400 font-semibold uppercase tracking-wider">{user.role}</p>
+            </div>
+          )}
+          <button
+            onClick={logout}
+            className={`w-full flex items-center gap-3 px-3 py-2 rounded-xl text-xs font-semibold text-red-600 hover:bg-red-50 hover:text-red-700 transition-all duration-200 ${
+              isCollapsed ? 'justify-center' : ''
+            }`}
+            title={isCollapsed ? 'Sign Out' : undefined}
+          >
+            <LogOut className="w-4 h-4 shrink-0" />
+            {!isCollapsed && <span className="font-jakarta">Sign Out</span>}
+          </button>
+        </div>
+      )}
 
       {/* Collapse Toggle Button */}
       <div className="p-4 border-t border-brand-border bg-brand-bg/10 flex items-center justify-center">

@@ -13,6 +13,9 @@ import {
   uploadResumeToDrive
 } from '../services/candidateService.js';
 import { ingestCandidate } from '../services/candidateSourceService.js';
+import authRouter from './auth.js';
+import adminRouter from './admin.js';
+import { authenticateToken } from '../middleware/auth.js';
 
 // Configure multer to use memory storage
 const upload = multer({
@@ -23,6 +26,15 @@ const upload = multer({
 });
 
 const router = express.Router();
+
+// Mount public Auth routes
+router.use('/auth', authRouter);
+
+// Mount Admin routes
+router.use('/admin', adminRouter);
+
+// Protect all existing candidates and department routes below
+router.use(authenticateToken);
 
 // --- Candidates Routes ---
 router.get('/candidates', async (req, res) => {

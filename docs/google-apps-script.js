@@ -513,6 +513,20 @@ function doPost(e) {
       return handleUploadResume(sheetId, fileData, fileName, roleName);
     }
 
+    if (action === "sendAdminNotification") {
+      var adminEmail = data.adminEmail;
+      var name = data.name;
+      var email = data.email;
+      return handleSendAdminNotification(adminEmail, name, email);
+    }
+
+    if (action === "sendUserApproval") {
+      var userEmail = data.userEmail;
+      var name = data.name;
+      var expiryDate = data.expiryDate;
+      return handleSendUserApproval(userEmail, name, expiryDate);
+    }
+
     return makeJsonResponse({ success: false, message: "Unknown POST action" }, 400);
   } catch (error) {
     return makeJsonResponse({ success: false, message: "Exception encountered: " + error.toString() }, 500);
@@ -2752,5 +2766,46 @@ function handleUploadResume(sheetId, fileData, fileName, roleName) {
   } catch (error) {
     Logger.log("handleUploadResume failed: " + error.toString());
     return makeJsonResponse({ success: false, message: "Upload failed: " + error.toString() }, 500);
+  }
+}
+
+function handleSendAdminNotification(adminEmail, name, email) {
+  Logger.log("Sending admin notification to: " + adminEmail);
+  try {
+    var subject = "New ATS Access Request";
+    var htmlBody = `
+    <div style="font-family:'Trebuchet MS',sans-serif;font-size:14px;line-height:1.7;color:#333;max-width:680px;">
+      <p>A new ATS access request has been submitted.</p>
+      <p><b>Name:</b> ${name}</p>
+      <p><b>Email:</b> ${email}</p>
+      <p>Please review the request in the ATS Admin Panel.</p>
+    </div>
+    `;
+    GmailApp.sendEmail(adminEmail, subject, "", { htmlBody: htmlBody });
+    return makeJsonResponse({ success: true, message: "Admin notification email sent." }, 200);
+  } catch (error) {
+    Logger.log("Failed to send admin notification: " + error.toString());
+    return makeJsonResponse({ success: false, message: "Email failed: " + error.toString() }, 500);
+  }
+}
+
+function handleSendUserApproval(userEmail, name, expiryDate) {
+  Logger.log("Sending approval email to: " + userEmail);
+  try {
+    var subject = "ATS Access Approved";
+    var htmlBody = `
+    <div style="font-family:'Trebuchet MS',sans-serif;font-size:14px;line-height:1.7;color:#333;max-width:680px;">
+      <p>Hello <b>${name}</b>,</p>
+      <p>Your ATS access request has been approved.</p>
+      <p><b>Access Valid Until:</b> ${expiryDate}</p>
+      <p>You may now log in using your registered account.</p>
+      <p>Regards,<br><b>Deepwoods Green HR Team</b></p>
+    </div>
+    `;
+    GmailApp.sendEmail(userEmail, subject, "", { htmlBody: htmlBody });
+    return makeJsonResponse({ success: true, message: "User approval email sent." }, 200);
+  } catch (error) {
+    Logger.log("Failed to send user approval email: " + error.toString());
+    return makeJsonResponse({ success: false, message: "Email failed: " + error.toString() }, 500);
   }
 }

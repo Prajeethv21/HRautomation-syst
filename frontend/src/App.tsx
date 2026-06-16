@@ -5,6 +5,11 @@ import Header from './components/Header';
 import Dashboard from './pages/Dashboard';
 import Candidates from './pages/Candidates';
 import DepartmentDetails from './pages/DepartmentDetails';
+import Login from './pages/Login';
+import Register from './pages/Register';
+import AdminPanel from './pages/AdminPanel';
+import ProtectedRoute from './components/ProtectedRoute';
+import { AuthProvider } from './context/AuthContext';
 import { ToastProvider } from './components/ui/Toast';
 import { DEPARTMENTS } from './config/departments';
 
@@ -19,6 +24,7 @@ const AppLayout: React.FC = () => {
       const dept = DEPARTMENTS.find(d => d.id === deptId);
       return dept ? `${dept.name} Department` : 'Department Details';
     }
+    if (pathname.startsWith('/admin')) return 'Admin Control Center';
     return 'Deepwoods Automation Portal';
   };
 
@@ -35,9 +41,10 @@ const AppLayout: React.FC = () => {
         {/* Dynamic Route Content */}
         <main className="p-8 flex-1 bg-[#F9FAFB]">
           <Routes>
-            <Route path="/dashboard" element={<Dashboard />} />
-            <Route path="/candidates" element={<Candidates />} />
-            <Route path="/departments/:id" element={<DepartmentDetails />} />
+            <Route path="/dashboard" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
+            <Route path="/candidates" element={<ProtectedRoute><Candidates /></ProtectedRoute>} />
+            <Route path="/departments/:id" element={<ProtectedRoute><DepartmentDetails /></ProtectedRoute>} />
+            <Route path="/admin" element={<ProtectedRoute adminOnly={true}><AdminPanel /></ProtectedRoute>} />
             {/* Catch-all redirect to Dashboard */}
             <Route path="*" element={<Navigate to="/dashboard" replace />} />
           </Routes>
@@ -50,9 +57,18 @@ const AppLayout: React.FC = () => {
 const App: React.FC = () => {
   return (
     <ToastProvider>
-      <BrowserRouter>
-        <AppLayout />
-      </BrowserRouter>
+      <AuthProvider>
+        <BrowserRouter>
+          <Routes>
+            {/* Public routes */}
+            <Route path="/login" element={<Login />} />
+            <Route path="/register" element={<Register />} />
+            
+            {/* Private layout wrapper */}
+            <Route path="*" element={<AppLayout />} />
+          </Routes>
+        </BrowserRouter>
+      </AuthProvider>
     </ToastProvider>
   );
 };

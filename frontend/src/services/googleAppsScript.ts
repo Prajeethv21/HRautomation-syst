@@ -38,9 +38,19 @@ export interface DashboardStats {
   selectedCandidates: number;
 }
 
+// Authentication fetch wrapper
+const fetchWithAuth = async (url: string, options: RequestInit = {}): Promise<Response> => {
+  const token = localStorage.getItem('ats_token');
+  const headers = {
+    ...options.headers,
+    ...(token ? { 'Authorization': `Bearer ${token}` } : {})
+  };
+  return fetch(url, { ...options, headers });
+};
+
 export const getCandidates = async (): Promise<Candidate[]> => {
   try {
-    const response = await fetch('/api/candidates');
+    const response = await fetchWithAuth('/api/candidates');
 
     if (!response.ok) {
       throw new Error(`HTTP error! status: ${response.status}`);
@@ -85,7 +95,7 @@ export const sendJoiningLetter = async (email: string): Promise<{ success: boole
 
     console.log('React sending POST request to /api/candidates/send with body:', JSON.stringify(requestPayload));
 
-    const response = await fetch('/api/candidates/send', {
+    const response = await fetchWithAuth('/api/candidates/send', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json'
@@ -121,7 +131,7 @@ export const sendRejectionEmail = async (email: string): Promise<{ success: bool
     const requestPayload = { candidateEmail: email };
     console.log('Rejection payload:', requestPayload);
 
-    const response = await fetch('/api/candidates/reject', {
+    const response = await fetchWithAuth('/api/candidates/reject', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(requestPayload)
@@ -155,7 +165,7 @@ export const sendInterviewEmail = async (email: string): Promise<{ success: bool
     const requestPayload = { email };
     console.log('Sending interview email payload:', requestPayload);
 
-    const response = await fetch('/api/candidates/interview', {
+    const response = await fetchWithAuth('/api/candidates/interview', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(requestPayload)
@@ -187,7 +197,7 @@ export const updateCandidateStatus = async (email: string, status: string): Prom
     console.log("Status:", status);
     const payload = { email, status };
 
-    const response = await fetch('/api/candidates/status', {
+    const response = await fetchWithAuth('/api/candidates/status', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload)
@@ -226,7 +236,7 @@ async function fetchWithRetry(url: string, maxRetries = 2, baseDelayMs = 2000): 
       await new Promise(res => setTimeout(res, delay));
     }
     try {
-      const response = await fetch(url);
+      const response = await fetchWithAuth(url);
       // Only retry on server errors (500+), not client errors (4xx)
       if (response.status >= 500 && attempt < maxRetries) {
         lastError = new Error(`HTTP error! status: ${response.status}`);
@@ -265,7 +275,7 @@ export const getDepartmentCandidates = async (sheetName: string): Promise<Depart
 
 export const triggerResumeProcessing = async (): Promise<{ success: boolean; message: string }> => {
   try {
-    const response = await fetch('/api/resumes/process', {
+    const response = await fetchWithAuth('/api/resumes/process', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json'
@@ -298,7 +308,7 @@ export const uploadResumes = async (files: File[], departmentId: string): Promis
       formData.append('resumes', file);
     });
 
-    const response = await fetch('/api/resumes/upload', {
+    const response = await fetchWithAuth('/api/resumes/upload', {
       method: 'POST',
       body: formData
     });
@@ -317,4 +327,3 @@ export const uploadResumes = async (files: File[], departmentId: string): Promis
     throw new Error(error.message || 'Failed to upload resumes');
   }
 };
-
