@@ -872,7 +872,7 @@ function handleGetDepartmentCandidates(sheetId, sheetName) {
       }
     }
 
-    // Columns: Candidate Name, Email, Phone Number, Work Experience, UG, PG, College, Location, LinkedIn, GitHub, Status
+    // Columns: Candidate Name, Email, Phone Number, UG, PG, College, Location, LinkedIn, GitHub, Status
     for (let i = 1; i < data.length; i++) {
       const row = data[i];
       const candidate = {};
@@ -880,13 +880,13 @@ function handleGetDepartmentCandidates(sheetId, sheetName) {
       candidate.candidateName = row[0] ? row[0].toString().trim() : "";
       candidate.email = row[1] ? row[1].toString().trim() : "";
       candidate.phoneNumber = row[2] ? row[2].toString().trim() : "";
-      candidate.ug = row[4] ? row[4].toString().trim() : "";
-      candidate.pg = row[5] ? row[5].toString().trim() : "";
-      candidate.college = row[6] ? row[6].toString().trim() : "";
-      candidate.location = row[7] ? row[7].toString().trim() : "N/A";
-      candidate.linkedin = row[8] ? row[8].toString().trim() : "";
-      candidate.github = row[9] ? row[9].toString().trim() : "";
-      candidate.status = row[10] ? row[10].toString().trim() : "Interviewing";
+      candidate.ug = row[3] ? row[3].toString().trim() : "";
+      candidate.pg = row[4] ? row[4].toString().trim() : "";
+      candidate.college = row[5] ? row[5].toString().trim() : "";
+      candidate.location = row[6] ? row[6].toString().trim() : "N/A";
+      candidate.linkedin = row[7] ? row[7].toString().trim() : "";
+      candidate.github = row[8] ? row[8].toString().trim() : "";
+      candidate.status = row[9] ? row[9].toString().trim() : "Interviewing";
       candidate.source = emailSources[candidate.email.toLowerCase()] || "Website";
       candidate.emailStatus = emailStatuses[candidate.email.toLowerCase()] || "Pending";
       candidate.resumeFileId = "";
@@ -943,7 +943,7 @@ function handleCreateCandidate(sheetId, candidate) {
       formatSheetValue(clean.interviewTime)
     ]);
 
-    // 2. Add to Department sheet (exactly 11 columns, no Source or Resume File ID)
+    // 2. Add to Department sheet (exactly 10 columns, no Source or Resume File ID)
     const deptSheetName = ROLE_TO_SHEET_MAP[clean.role] || clean.role;
     if (deptSheetName) {
       let deptSheet = getSheetByName(sheetId, deptSheetName);
@@ -955,7 +955,6 @@ function handleCreateCandidate(sheetId, candidate) {
           "Candidate Name",
           "Email",
           "Phone Number",
-          "Work Experience",
           "UG",
           "PG",
           "College",
@@ -966,12 +965,11 @@ function handleCreateCandidate(sheetId, candidate) {
         ]);
       }
 
-      // Columns: Candidate Name, Email, Phone Number, Work Experience, UG, PG, College, Location, LinkedIn, GitHub, Status
+      // Columns: Candidate Name, Email, Phone Number, UG, PG, College, Location, LinkedIn, GitHub, Status
       deptSheet.appendRow([
         clean.name,
         clean.email,
         clean.phoneNumber,
-        "", // Work Experience remains blank
         clean.ug,
         clean.pg,
         clean.college,
@@ -3042,19 +3040,41 @@ function runExistingDataRepair() {
     var deptSheetName = ROLE_TO_SHEET_MAP[role] || role;
     var deptSheet = ss.getSheetByName(deptSheetName);
     
+    // Read the headers BEFORE overwriting/cleaning columns, to determine original field indices
+    var deptHeaders = deptSheet ? deptSheet.getDataRange().getValues()[0] : [];
+    var dPhoneIdx = deptHeaders.indexOf("Phone Number");
+    var dUgIdx = deptHeaders.indexOf("UG");
+    var dPgIdx = deptHeaders.indexOf("PG");
+    var dCollegeIdx = deptHeaders.indexOf("College");
+    var dLocIdx = deptHeaders.indexOf("Location");
+    var dLinkIdx = deptHeaders.indexOf("LinkedIn");
+    var dGitIdx = deptHeaders.indexOf("GitHub");
+
     // Ensure department sheet columns are cleaned of extra columns and formatted
     if (deptSheet) {
       var dLastCol = deptSheet.getLastColumn();
-      if (dLastCol > 11) {
-        deptSheet.getRange(1, 12, deptSheet.getLastRow(), dLastCol - 11).clearContent();
+      if (dLastCol > 10) {
+        deptSheet.getRange(1, 11, deptSheet.getLastRow(), dLastCol - 10).clearContent();
       }
+      // Overwrite/repair headers to exactly 10 columns
+      deptSheet.getRange(1, 1, 1, 10).setValues([[
+        "Candidate Name",
+        "Email",
+        "Phone Number",
+        "UG",
+        "PG",
+        "College",
+        "Location",
+        "LinkedIn",
+        "GitHub",
+        "Status"
+      ]]);
     } else if (deptSheetName) {
       deptSheet = ss.insertSheet(deptSheetName);
       deptSheet.appendRow([
         "Candidate Name",
         "Email",
         "Phone Number",
-        "Work Experience",
         "UG",
         "PG",
         "College",
@@ -3095,13 +3115,13 @@ function runExistingDataRepair() {
     var candObj = {
       name: (parsedDetails && parsedDetails.name) ? parsedDetails.name : cName,
       email: email,
-      phoneNumber: (parsedDetails && parsedDetails.phoneNumber) ? parsedDetails.phoneNumber : (deptRowInfo ? deptRowInfo.rowValues[2] : ""),
-      ug: (parsedDetails && parsedDetails.ug) ? parsedDetails.ug : (deptRowInfo ? deptRowInfo.rowValues[4] : ""),
-      pg: (parsedDetails && parsedDetails.pg) ? parsedDetails.pg : (deptRowInfo ? deptRowInfo.rowValues[5] : ""),
-      college: (parsedDetails && parsedDetails.college) ? parsedDetails.college : (deptRowInfo ? deptRowInfo.rowValues[6] : ""),
-      location: (parsedDetails && parsedDetails.location) ? parsedDetails.location : (deptRowInfo ? deptRowInfo.rowValues[7] : "N/A"),
-      linkedin: (parsedDetails && parsedDetails.linkedin) ? parsedDetails.linkedin : (deptRowInfo ? deptRowInfo.rowValues[8] : ""),
-      github: (parsedDetails && parsedDetails.github) ? parsedDetails.github : (deptRowInfo ? deptRowInfo.rowValues[9] : ""),
+      phoneNumber: (parsedDetails && parsedDetails.phoneNumber) ? parsedDetails.phoneNumber : (deptRowInfo && dPhoneIdx !== -1 ? deptRowInfo.rowValues[dPhoneIdx] : ""),
+      ug: (parsedDetails && parsedDetails.ug) ? parsedDetails.ug : (deptRowInfo && dUgIdx !== -1 ? deptRowInfo.rowValues[dUgIdx] : ""),
+      pg: (parsedDetails && parsedDetails.pg) ? parsedDetails.pg : (deptRowInfo && dPgIdx !== -1 ? deptRowInfo.rowValues[dPgIdx] : ""),
+      college: (parsedDetails && parsedDetails.college) ? parsedDetails.college : (deptRowInfo && dCollegeIdx !== -1 ? deptRowInfo.rowValues[dCollegeIdx] : ""),
+      location: (parsedDetails && parsedDetails.location) ? parsedDetails.location : (deptRowInfo && dLocIdx !== -1 ? deptRowInfo.rowValues[dLocIdx] : "N/A"),
+      linkedin: (parsedDetails && parsedDetails.linkedin) ? parsedDetails.linkedin : (deptRowInfo && dLinkIdx !== -1 ? deptRowInfo.rowValues[dLinkIdx] : ""),
+      github: (parsedDetails && parsedDetails.github) ? parsedDetails.github : (deptRowInfo && dGitIdx !== -1 ? deptRowInfo.rowValues[dGitIdx] : ""),
       role: role,
       status: status,
       emailStatus: emailStatus,
@@ -3132,7 +3152,6 @@ function runExistingDataRepair() {
           clean.name,
           clean.email,
           clean.phoneNumber,
-          "", // Work Experience
           clean.ug,
           clean.pg,
           clean.college,
@@ -3145,14 +3164,13 @@ function runExistingDataRepair() {
         deptSheet.getRange(deptRowIndex, 1).setValue(clean.name);
         deptSheet.getRange(deptRowIndex, 2).setValue(clean.email);
         deptSheet.getRange(deptRowIndex, 3).setValue(clean.phoneNumber);
-        deptSheet.getRange(deptRowIndex, 4).setValue("");
-        deptSheet.getRange(deptRowIndex, 5).setValue(clean.ug);
-        deptSheet.getRange(deptRowIndex, 6).setValue(clean.pg);
-        deptSheet.getRange(deptRowIndex, 7).setValue(clean.college);
-        deptSheet.getRange(deptRowIndex, 8).setValue(clean.location);
-        deptSheet.getRange(deptRowIndex, 9).setValue(clean.linkedin);
-        deptSheet.getRange(deptRowIndex, 10).setValue(clean.github);
-        deptSheet.getRange(deptRowIndex, 11).setValue(formatSheetValue(clean.status));
+        deptSheet.getRange(deptRowIndex, 4).setValue(clean.ug);
+        deptSheet.getRange(deptRowIndex, 5).setValue(clean.pg);
+        deptSheet.getRange(deptRowIndex, 6).setValue(clean.college);
+        deptSheet.getRange(deptRowIndex, 7).setValue(clean.location);
+        deptSheet.getRange(deptRowIndex, 8).setValue(clean.linkedin);
+        deptSheet.getRange(deptRowIndex, 9).setValue(clean.github);
+        deptSheet.getRange(deptRowIndex, 10).setValue(formatSheetValue(clean.status));
       }
     }
   }
