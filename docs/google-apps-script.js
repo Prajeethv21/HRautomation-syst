@@ -370,6 +370,19 @@ function onEdit(e) {
     // Trigger any side effects (like auto shortlist/review emails)
     triggerTransitionSideEffects(null, email, oldStatus, val);
   }
+function formatSheetValue(val) {
+  if (val === null || val === undefined) return "";
+  if (typeof val === "object") {
+    if (val instanceof Date) {
+      return Utilities.formatDate(val, Session.getScriptTimeZone(), "yyyy-MM-dd");
+    }
+    return "";
+  }
+  var str = val.toString().trim();
+  if (str.indexOf("+") === 0 || str.indexOf("=") === 0) {
+    return "'" + str;
+  }
+  return str;
 }
 
 // --- REST API ENDPOINTS FOR FRONTEND ---
@@ -857,7 +870,7 @@ function handleGetDepartmentCandidates(sheetId, sheetName) {
       }
     }
 
-    // Columns: Candidate Name, Email, Phone Number, UG, PG, College, Graduation Year, Location, LinkedIn, GitHub, Status
+    // Columns: Candidate Name, Email, Phone Number, Work Experience, UG, PG, College, Location, LinkedIn, GitHub, Status
     for (let i = 1; i < data.length; i++) {
       const row = data[i];
       const candidate = {};
@@ -865,10 +878,9 @@ function handleGetDepartmentCandidates(sheetId, sheetName) {
       candidate.candidateName = row[0] ? row[0].toString().trim() : "";
       candidate.email = row[1] ? row[1].toString().trim() : "";
       candidate.phoneNumber = row[2] ? row[2].toString().trim() : "";
-      candidate.ug = row[3] ? row[3].toString().trim() : "";
-      candidate.pg = row[4] ? row[4].toString().trim() : "";
-      candidate.college = row[5] ? row[5].toString().trim() : "";
-      candidate.graduationYear = row[6] ? row[6].toString().trim() : "";
+      candidate.ug = row[4] ? row[4].toString().trim() : "";
+      candidate.pg = row[5] ? row[5].toString().trim() : "";
+      candidate.college = row[6] ? row[6].toString().trim() : "";
       candidate.location = row[7] ? row[7].toString().trim() : "N/A";
       candidate.linkedin = row[8] ? row[8].toString().trim() : "";
       candidate.github = row[9] ? row[9].toString().trim() : "";
@@ -895,34 +907,40 @@ function handleCreateCandidate(sheetId, candidate) {
       return makeJsonResponse({ success: false, message: "Candidate name and email are required" }, 400);
     }
 
+    // Run validation to replace failed/error values with blank strings
+    var validatedName = (candidate.name && typeof candidate.name === "string" && candidate.name.toLowerCase().indexOf("error") === -1) ? candidate.name : "";
+    var validatedEmail = (candidate.email && typeof candidate.email === "string" && candidate.email.indexOf("@") !== -1 && candidate.email.indexOf(".") !== -1) ? candidate.email : "";
+    var validatedPhone = (candidate.phoneNumber && typeof candidate.phoneNumber === "string" && candidate.phoneNumber.toLowerCase().indexOf("error") === -1) ? candidate.phoneNumber : "";
+    var validatedCollege = (candidate.college && typeof candidate.college === "string" && candidate.college.toLowerCase().indexOf("error") === -1) ? candidate.college : "";
+
     const masterSheet = getSheetByName(sheetId, "Candidates");
     const masterData = masterSheet.getDataRange().getValues();
     let candidateExists = false;
 
     // Check if candidate already exists in Candidates master sheet
     for (let i = 1; i < masterData.length; i++) {
-      if (masterData[i][1] && masterData[i][1].toString().trim().toLowerCase() === candidate.email.trim().toLowerCase()) {
+      if (masterData[i][1] && masterData[i][1].toString().trim().toLowerCase() === validatedEmail.trim().toLowerCase()) {
         candidateExists = true;
         break;
       }
     }
 
     if (candidateExists) {
-      return makeJsonResponse({ success: false, message: "Candidate with email " + candidate.email + " already exists" }, 400);
+      return makeJsonResponse({ success: false, message: "Candidate with email " + validatedEmail + " already exists" }, 400);
     }
 
     // 1. Add to Candidates master sheet (exactly 9 columns)
     // Columns: Candidate Name, Email Address, Role Applied For, Joining Date, Status, Email Status, Source, Interview Date, Interview Time
     masterSheet.appendRow([
-      candidate.name,
-      candidate.email,
-      candidate.role || "",
-      candidate.joiningDate || "",
-      candidate.status || "Submitted",
-      candidate.emailStatus || "Pending",
-      candidate.source || "Website",
-      candidate.interviewDate || "",
-      candidate.interviewTime || ""
+      formatSheetValue(validatedName),
+      formatSheetValue(validatedEmail),
+      formatSheetValue(candidate.role || ""),
+      formatSheetValue(candidate.joiningDate || ""),
+      formatSheetValue(candidate.status || "Submitted"),
+      formatSheetValue(candidate.emailStatus || "Pending"),
+      formatSheetValue(candidate.source || "Website"),
+      formatSheetValue(candidate.interviewDate || ""),
+      formatSheetValue(candidate.interviewTime || "")
     ]);
 
     // 2. Add to Department sheet (exactly 11 columns, no Source or Resume File ID)
@@ -937,10 +955,10 @@ function handleCreateCandidate(sheetId, candidate) {
           "Candidate Name",
           "Email",
           "Phone Number",
+          "Work Experience",
           "UG",
           "PG",
           "College",
-          "Graduation Year",
           "Location",
           "LinkedIn",
           "GitHub",
@@ -948,19 +966,19 @@ function handleCreateCandidate(sheetId, candidate) {
         ]);
       }
 
-      // Columns: Candidate Name, Email, Phone Number, UG, PG, College, Graduation Year, Location, LinkedIn, GitHub, Status
+      // Columns: Candidate Name, Email, Phone Number, Work Experience, UG, PG, College, Location, LinkedIn, GitHub, Status
       deptSheet.appendRow([
-        candidate.name,
-        candidate.email,
-        candidate.phoneNumber || "",
-        candidate.ug || "",
-        candidate.pg || "",
-        candidate.college || "",
-        candidate.graduationYear || "",
-        candidate.location || "N/A",
-        candidate.linkedin || "",
-        candidate.github || "",
-        candidate.status || "Submitted"
+        formatSheetValue(validatedName),
+        formatSheetValue(validatedEmail),
+        formatSheetValue(validatedPhone),
+        "", // Work Experience remains blank
+        formatSheetValue(candidate.ug),
+        formatSheetValue(candidate.pg),
+        formatSheetValue(validatedCollege),
+        formatSheetValue(candidate.location || "N/A"),
+        formatSheetValue(candidate.linkedin),
+        formatSheetValue(candidate.github),
+        formatSheetValue(candidate.status || "Submitted")
       ]);
     }
 
@@ -1544,6 +1562,33 @@ function extractGraduationYear(text, ugLine, pgLine, collegeLine) {
   return "";
 }
 
+function extractGraduationYearOrRange(text, ugLine, pgLine, collegeLine) {
+  var rangeRegex = /\b(19\d{2}|20\d{2})\s*[-–\/\s(to)]+\s*(19\d{2}|20\d{2})\b/;
+  
+  var searchLines = [ugLine, pgLine, collegeLine].filter(Boolean);
+  for (var i = 0; i < searchLines.length; i++) {
+    var rangeMatch = searchLines[i].match(rangeRegex);
+    if (rangeMatch) {
+      return rangeMatch[0].replace(/\s+/g, " ");
+    }
+  }
+  
+  var lines = text.split('\n');
+  for (var i = 0; i < lines.length; i++) {
+    var line = lines[i].toLowerCase();
+    if (line.indexOf("education") !== -1 || line.indexOf("academic") !== -1 || line.indexOf("degree") !== -1 || line.indexOf("bachelor") !== -1 || line.indexOf("master") !== -1 || line.indexOf("passing") !== -1 || line.indexOf("graduation") !== -1) {
+      for (var j = i; j <= Math.min(i + 3, lines.length - 1); j++) {
+        var m = lines[j].match(rangeRegex);
+        if (m) {
+          return m[0].replace(/\s+/g, " ");
+        }
+      }
+    }
+  }
+  
+  return extractGraduationYear(text, ugLine, pgLine, collegeLine) || "";
+}
+
 // Regular expressions and scores mapping to parse resume details
 function parseCandidateDetails(text) {
   var details = {
@@ -1642,8 +1687,14 @@ function parseCandidateDetails(text) {
     if (collMatch) details.college = cleanCollegeName(collMatch[1]);
   }
 
-  // Extract Graduation Year
-  details.graduationYear = extractGraduationYear(text, details.ug, details.pg, details.college);
+  // Extract Graduation Year or Range and append to College
+  var gradYear = extractGraduationYearOrRange(text, details.ug, details.pg, details.college);
+  if (details.college && gradYear) {
+    if (details.college.indexOf(gradYear) === -1) {
+      details.college = details.college + " (" + gradYear + ")";
+    }
+  }
+  details.graduationYear = "";
 
   return details;
 }
@@ -2229,16 +2280,42 @@ function runExistingDataRepair() {
       var data = range.getValues();
       if (data.length <= 1) continue;
 
+      var headers = data[0];
+      var nameIdx = headers.indexOf("Candidate Name");
+      var emailIdx = headers.indexOf("Email");
+      var phoneIdx = headers.indexOf("Phone Number");
+      var expIdx = headers.indexOf("Work Experience");
+      var ugIdx = headers.indexOf("UG");
+      var pgIdx = headers.indexOf("PG");
+      var collegeIdx = headers.indexOf("College");
+      var gradIdx = headers.indexOf("Graduation Year");
+      var locIdx = headers.indexOf("Location");
+      var liIdx = headers.indexOf("LinkedIn");
+      var ghIdx = headers.indexOf("GitHub");
+      var statusIdx = headers.indexOf("Status");
+
+      // Dynamic fallbacks
+      if (nameIdx === -1) nameIdx = 0;
+      if (emailIdx === -1) emailIdx = 1;
+      if (phoneIdx === -1) phoneIdx = 2;
+      if (ugIdx === -1) ugIdx = headers.indexOf("UG") !== -1 ? headers.indexOf("UG") : (headers.indexOf("Work Experience") !== -1 ? 4 : 3);
+      if (pgIdx === -1) pgIdx = headers.indexOf("PG") !== -1 ? headers.indexOf("PG") : (headers.indexOf("Work Experience") !== -1 ? 5 : 4);
+      if (collegeIdx === -1) collegeIdx = headers.indexOf("College") !== -1 ? headers.indexOf("College") : (headers.indexOf("Work Experience") !== -1 ? 6 : 5);
+      if (locIdx === -1) locIdx = headers.indexOf("Location") !== -1 ? headers.indexOf("Location") : (headers.indexOf("Work Experience") !== -1 ? 7 : 7);
+      if (liIdx === -1) liIdx = headers.indexOf("LinkedIn") !== -1 ? headers.indexOf("LinkedIn") : (headers.indexOf("Work Experience") !== -1 ? 8 : 8);
+      if (ghIdx === -1) ghIdx = headers.indexOf("GitHub") !== -1 ? headers.indexOf("GitHub") : (headers.indexOf("Work Experience") !== -1 ? 9 : 9);
+      if (statusIdx === -1) statusIdx = headers.indexOf("Status") !== -1 ? headers.indexOf("Status") : (headers.indexOf("Work Experience") !== -1 ? 10 : 10);
+
       sheet.getRange(2, 1, sheet.getLastRow() - 1, 11).clearContent();
 
       sheet.getRange(1, 1, 1, 11).setValues([[
         "Candidate Name",
         "Email",
         "Phone Number",
+        "Work Experience",
         "UG",
         "PG",
         "College",
-        "Graduation Year",
         "Location",
         "LinkedIn",
         "GitHub",
@@ -2247,30 +2324,40 @@ function runExistingDataRepair() {
 
       for (let j = 1; j < data.length; j++) {
         var row = data[j];
-        var cName = row[0] ? row[0].toString().trim() : "";
-        var email = row[1] ? row[1].toString().trim() : "";
-        var phone = row[2] ? row[2].toString().trim() : "";
-        var rawExp = row[3] ? row[3].toString().trim() : "";
-        var ugRaw = row[4] ? row[4].toString().trim() : "";
-        var pgRaw = row[5] ? row[5].toString().trim() : "";
-        var collegeRaw = row[6] ? row[6].toString().trim() : "";
-        var location = row[7] ? row[7].toString().trim() : "N/A";
-        var linkedin = row[8] ? row[8].toString().trim() : "";
-        var github = row[9] ? row[9].toString().trim() : "";
-        var status = row[10] ? row[10].toString().trim() : "Submitted";
+        var cName = nameIdx !== -1 && row[nameIdx] ? row[nameIdx].toString().trim() : "";
+        var email = emailIdx !== -1 && row[emailIdx] ? row[emailIdx].toString().trim() : "";
+        var phone = phoneIdx !== -1 && row[phoneIdx] ? row[phoneIdx].toString().trim() : "";
+        var rawExp = expIdx !== -1 && row[expIdx] ? row[expIdx].toString().trim() : "";
+        var ugRaw = ugIdx !== -1 && row[ugIdx] ? row[ugIdx].toString().trim() : "";
+        var pgRaw = pgIdx !== -1 && row[pgIdx] ? row[pgIdx].toString().trim() : "";
+        var collegeRaw = collegeIdx !== -1 && row[collegeIdx] ? row[collegeIdx].toString().trim() : "";
+        var location = locIdx !== -1 && row[locIdx] ? row[locIdx].toString().trim() : "N/A";
+        var linkedin = liIdx !== -1 && row[liIdx] ? row[liIdx].toString().trim() : "";
+        var github = ghIdx !== -1 && row[ghIdx] ? row[ghIdx].toString().trim() : "";
+        var status = statusIdx !== -1 && row[statusIdx] ? row[statusIdx].toString().trim() : "Submitted";
 
-        // Extract graduation year before cleaning degrees
+        // Extract graduation year or range before cleaning degrees
         var gradYear = "";
-        var yearRegex = /\b(19\d{2}|20\d{2})\b/;
-        var match = ugRaw.match(yearRegex) || pgRaw.match(yearRegex) || collegeRaw.match(yearRegex) || rawExp.match(yearRegex);
-        if (match) {
-          gradYear = match[1];
+        if (gradIdx !== -1 && row[gradIdx]) {
+          gradYear = row[gradIdx].toString().trim();
+        }
+        if (!gradYear) {
+          var yearRegex = /\b(19\d{2}|20\d{2})\b/;
+          var match = ugRaw.match(yearRegex) || pgRaw.match(yearRegex) || collegeRaw.match(yearRegex) || rawExp.match(yearRegex);
+          if (match) {
+            gradYear = match[1];
+          }
         }
 
         // Clean degrees and college
         var ug = cleanUGDegree(ugRaw);
         var pg = cleanPGDegree(pgRaw);
         var college = cleanCollegeName(collegeRaw);
+
+        // Append graduation year to college if found
+        if (college && gradYear && college.indexOf(gradYear) === -1) {
+          college = college + " (" + gradYear + ")";
+        }
 
         // Normalize status
         if (status === "Applied" || status === "Interviewing") {
@@ -2287,18 +2374,24 @@ function runExistingDataRepair() {
         if (linkedin && !linkedin.startsWith("http")) linkedin = "https://" + linkedin;
         if (github && !github.startsWith("http")) github = "https://" + github;
 
+        // Perform validations: replace failed/error values with blank strings
+        var validatedName = (cName && cName.toLowerCase().indexOf("error") === -1) ? cName : "";
+        var validatedEmail = (email && email.indexOf("@") !== -1 && email.indexOf(".") !== -1) ? email : "";
+        var validatedPhone = (phone && phone.toLowerCase().indexOf("error") === -1) ? phone : "";
+        var validatedCollege = (college && college.toLowerCase().indexOf("error") === -1) ? college : "";
+
         sheet.getRange(j + 1, 1, 1, 11).setValues([[
-          cName,
-          email,
-          phone,
-          ug,
-          pg,
-          college,
-          gradYear,
-          location,
-          linkedin,
-          github,
-          status
+          formatSheetValue(validatedName),
+          formatSheetValue(validatedEmail),
+          formatSheetValue(validatedPhone),
+          "", // Work Experience is written as blank
+          formatSheetValue(ug),
+          formatSheetValue(pg),
+          formatSheetValue(validatedCollege),
+          formatSheetValue(location),
+          formatSheetValue(linkedin),
+          formatSheetValue(github),
+          formatSheetValue(status)
         ]]);
       }
     }

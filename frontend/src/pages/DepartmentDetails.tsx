@@ -800,7 +800,6 @@ const DepartmentDetails: React.FC = () => {
                   <th className="px-6 py-4.5 text-xs font-bold text-gray-500 uppercase tracking-wider font-jakarta">UG</th>
                   <th className="px-6 py-4.5 text-xs font-bold text-gray-500 uppercase tracking-wider font-jakarta">PG</th>
                   <th className="px-6 py-4.5 text-xs font-bold text-gray-500 uppercase tracking-wider font-jakarta">College</th>
-                  <th className="px-6 py-4.5 text-xs font-bold text-gray-500 uppercase tracking-wider font-jakarta">Grad. Year</th>
                   <th className="px-6 py-4.5 text-xs font-bold text-gray-500 uppercase tracking-wider font-jakarta">Links</th>
                   <th className="px-6 py-4.5 text-left">{renderSortHeader('Status', 'status')}</th>
                   <th className="px-6 py-4.5 text-xs font-bold text-gray-500 uppercase tracking-wider text-right font-jakarta">Actions</th>
@@ -839,9 +838,6 @@ const DepartmentDetails: React.FC = () => {
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-xs text-gray-500 max-w-[160px] truncate overflow-hidden text-ellipsis whitespace-nowrap" title={candidate.college || 'N/A'}>
                       {candidate.college || 'N/A'}
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-xs text-gray-500 max-w-[100px] truncate overflow-hidden text-ellipsis whitespace-nowrap" title={candidate.graduationYear || 'N/A'}>
-                      {candidate.graduationYear || 'N/A'}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-xs text-gray-500">
                       <div className="flex items-center gap-2">

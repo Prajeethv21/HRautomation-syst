@@ -351,16 +351,6 @@ const CandidateDetailsModal: React.FC<CandidateDetailsModalProps> = ({
             </div>
           )}
 
-          {/* Graduation Year Card */}
-          {extra.graduationYear && (
-            <div className="bg-white border border-brand-border/60 rounded-xl p-4 flex gap-3 shadow-sm hover:border-brand-light/35 transition-colors duration-250">
-              <GraduationCap className="w-5 h-5 text-brand shrink-0 mt-0.5" />
-              <div className="space-y-0.5">
-                <span className="text-[10px] text-gray-400 font-semibold uppercase tracking-wider block">Graduation Year</span>
-                <span className="text-sm font-semibold text-brand-text">{extra.graduationYear}</span>
-              </div>
-            </div>
-          )}
 
           {/* UG / PG Card */}
           {(extra.ug || extra.pg) && (

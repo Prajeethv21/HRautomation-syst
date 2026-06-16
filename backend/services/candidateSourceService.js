@@ -36,7 +36,6 @@ export class BaseCandidateSource {
       ug: candidate.ug || '',
       pg: candidate.pg || '',
       college: candidate.college || '',
-      graduationYear: candidate.graduationYear || '',
       location: candidate.location || '',
       linkedin: candidate.linkedin || '',
       github: candidate.github || ''

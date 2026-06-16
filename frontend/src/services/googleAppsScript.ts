@@ -21,7 +21,6 @@ export interface DepartmentCandidate {
   ug: string;
   pg: string;
   college: string;
-  graduationYear?: string;
   location?: string;
   linkedin: string;
   github: string;
