@@ -2130,8 +2130,251 @@ function extractGraduationYearOrRange(text, ugLine, pgLine, collegeLine) {
   return extractGraduationYear(text, ugLine, pgLine, collegeLine) || "";
 }
 
+function cleanLineToDegree(line, isPG) {
+  var ugKeywords = ["btech", "b.tech", "be", "b.e", "bsc", "b.sc", "bca", "bba", "ba", "bcom", "b.com", "bachelor", "undergraduate", "ug"];
+  var pgKeywords = ["mtech", "m.tech", "mba", "msc", "m.sc", "mca", "pgdm", "mcom", "m.com", "me", "m.e", "master", "postgraduate", "pg"];
+  var targetKeywords = isPG ? pgKeywords : ugKeywords;
+  
+  var parts = line.split(/[-–—|]|\bat\b|\bfrom\b/i);
+  var collegeKeywords = /\b(university|college|institute|school|academy|vidyapeeth|iit|nit|bits|zell|institution|deemed)\b/i;
+  
+  for (var i = 0; i < parts.length; i++) {
+    var p = parts[i].trim();
+    var pLower = p.toLowerCase();
+    
+    var containsDegree = false;
+    for (var k = 0; k < targetKeywords.length; k++) {
+      var kw = targetKeywords[k];
+      var regex = new RegExp("\\b" + kw.replace(/\./g, "\\.?") + "\\b", "i");
+      if (regex.test(pLower)) {
+        containsDegree = true;
+        break;
+      }
+    }
+    
+    if (containsDegree && !collegeKeywords.test(pLower)) {
+      // Clean years and GPA
+      var cleaned = p.replace(/\b(19\d{2}|20\d{2})\b/g, "")
+                     .replace(/\b\d{4}\s*[-–\/\s(to)]+\s*\d{4}\b/g, "")
+                     .replace(/\b(?:gpa|cgpa|grade|score|marks?)\s*:\s*\d+(?:\.\d+)?\b/gi, "")
+                     .replace(/\b\d+(?:\.\d+)?\s*(?:%|gpa|cgpa)\b/gi, "")
+                     .replace(/\s+/g, " ")
+                     .trim();
+      cleaned = cleaned.replace(/^[,;\-\s—|]+|[,;\-\s—|]+$/g, "").trim();
+      if (cleaned) return cleaned;
+    }
+  }
+  
+  // Fallback: search within the whole line but strip college
+  var pLower = line.toLowerCase();
+  var containsDegree = false;
+  for (var k = 0; k < targetKeywords.length; k++) {
+    var kw = targetKeywords[k];
+    var regex = new RegExp("\\b" + kw.replace(/\./g, "\\.?") + "\\b", "i");
+    if (regex.test(pLower)) {
+      containsDegree = true;
+      break;
+    }
+  }
+  if (containsDegree) {
+    var parts2 = line.split(collegeKeywords);
+    for (var i = 0; i < parts2.length; i++) {
+      var pt = parts2[i].trim();
+      if (!pt) continue;
+      
+      var containsDegree2 = false;
+      for (var k = 0; k < targetKeywords.length; k++) {
+        var kw = targetKeywords[k];
+        var regex = new RegExp("\\b" + kw.replace(/\./g, "\\.?") + "\\b", "i");
+        if (regex.test(pt.toLowerCase())) {
+          containsDegree2 = true;
+          break;
+        }
+      }
+      if (containsDegree2) {
+        var cleaned = pt.replace(/\b(19\d{2}|20\d{2})\b/g, "")
+                        .replace(/\b\d{4}\s*[-–\/\s(to)]+\s*\d{4}\b/g, "")
+                        .replace(/\b(?:gpa|cgpa|grade|score|marks?)\s*:\s*\d+(?:\.\d+)?\b/gi, "")
+                        .replace(/\b\d+(?:\.\d+)?\s*(?:%|gpa|cgpa)\b/gi, "")
+                        .replace(/\s+/g, " ")
+                        .trim();
+        cleaned = cleaned.replace(/^[,;\-\s—|]+|[,;\-\s—|]+$/g, "").trim();
+        if (cleaned) return cleaned;
+      }
+    }
+  }
+  return "";
+}
+
+function extractUG(text) {
+  var ugRegex = /\b(b\.?tech|b\.?e|b\.?sc|b\.?c\.?a|b\.?a|b\.?com|b\.?b\.?a|bachelor|undergraduate|ug)\b/i;
+  var pgRegex = /\b(m\.?tech|m\.?e|m\.?sc|m\.?c\.?a|m\.?a|m\.?com|m\.?b\.?a|master|postgraduate|pgdm|pg)\b/i;
+  var lines = text.split('\n').map(function(l) { return l.trim(); }).filter(Boolean);
+  
+  for (var i = 0; i < lines.length; i++) {
+    var line = lines[i];
+    if (ugRegex.test(line)) {
+      if (pgRegex.test(line)) {
+        continue;
+      }
+      var cleaned = cleanLineToDegree(line, false);
+      if (cleaned) return cleaned;
+    }
+  }
+  return "";
+}
+
+function extractPG(text) {
+  var pgRegex = /\b(m\.?tech|m\.?e|m\.?sc|m\.?c\.?a|m\.?a|m\.?com|m\.?b\.?a|master|postgraduate|pgdm|pg)\b/i;
+  var lines = text.split('\n').map(function(l) { return l.trim(); }).filter(Boolean);
+  
+  for (var i = 0; i < lines.length; i++) {
+    var line = lines[i];
+    if (pgRegex.test(line)) {
+      if (/\babout\s+me\b/i.test(line) || /\bcontact\s+me\b/i.test(line)) {
+        continue;
+      }
+      var cleaned = cleanLineToDegree(line, true);
+      if (cleaned) return cleaned;
+    }
+  }
+  return "";
+}
+
+function extractCollege(text) {
+  var lines = text.split('\n').map(function(l) { return l.trim(); }).filter(Boolean);
+  var collegeKeywords = /\b(university|college|institute|school|academy|vidyapeeth|iit|nit|bits|zell|institution|deemed)\b/i;
+  
+  var colleges = [];
+  for (var i = 0; i < lines.length; i++) {
+    var line = lines[i];
+    if (collegeKeywords.test(line)) {
+      var cleaned = cleanCollegeName(line);
+      if (cleaned && cleaned.length >= 5) {
+        var year = "";
+        var yearRangeRegex = /\b(19\d{2}|20\d{2})\s*[-–\/\s(to)]+\s*(19\d{2}|20\d{2})\b/;
+        var singleYearRegex = /\b(19\d{2}|20\d{2})\b/;
+        
+        var mRange = line.match(yearRangeRegex);
+        if (mRange) {
+          year = mRange[0].replace(/\s+/g, " ");
+        } else {
+          var mSingle = line.match(singleYearRegex);
+          if (mSingle) {
+            year = mSingle[1];
+          } else {
+            if (i < lines.length - 1) {
+              var nextLine = lines[i+1];
+              var mRangeNext = nextLine.match(yearRangeRegex);
+              if (mRangeNext) {
+                year = mRangeNext[0].replace(/\s+/g, " ");
+              } else {
+                var mSingleNext = nextLine.match(singleYearRegex);
+                if (mSingleNext) {
+                  year = mSingleNext[1];
+                }
+              }
+            }
+          }
+        }
+        
+        var collegeVal = cleaned;
+        if (year) {
+          collegeVal = cleaned + " (" + year + ")";
+        }
+        colleges.push(collegeVal);
+      }
+    }
+  }
+  
+  if (colleges.length > 0) {
+    return colleges[0];
+  }
+  
+  return "";
+}
+
+function extractLocation(text) {
+  var cities = [
+    "Bangalore", "Bengaluru", "Mysore", "Chennai", "Hyderabad", 
+    "Pune", "Mumbai", "Delhi", "Kolkata", "Noida", "Gurgaon"
+  ];
+  
+  for (var c = 0; c < cities.length; c++) {
+    var cityRegex = new RegExp("\\b" + cities[c] + "\\b", "i");
+    if (cityRegex.test(text)) {
+      return cities[c];
+    }
+  }
+  
+  var lines = text.split('\n').map(function (line) { return line.trim(); }).filter(Boolean);
+  for (var k = 0; k < lines.length; k++) {
+    var ln = lines[k];
+    var lnLower = ln.toLowerCase();
+    if (lnLower.indexOf("location:") !== -1 || lnLower.indexOf("address:") !== -1 || lnLower.indexOf("live in") !== -1) {
+      var candidateLoc = ln.replace(/location:/i, "").replace(/address:/i, "").replace(/live\s+in/i, "").trim();
+      if (!isInvalidLocation(candidateLoc)) {
+        return candidateLoc;
+      }
+    }
+  }
+  
+  var locMatch = text.match(/location\s*:\s*([^\n]+)/i);
+  if (locMatch) {
+    var candidateLoc = locMatch[1].trim();
+    if (!isInvalidLocation(candidateLoc)) {
+      return candidateLoc;
+    }
+  }
+  
+  return "N/A";
+}
+
+function extractLinkedIn(text, links) {
+  links = links || [];
+  
+  for (var i = 0; i < links.length; i++) {
+    var url = links[i].url;
+    if (isValidLinkedInProfile(url)) {
+      return normalizeLinkedInUrl(url);
+    }
+  }
+  
+  var linkedinRegex = /linkedin\.com\/in\/[a-zA-Z0-9_\-\/\.\?\=\&]+/i;
+  var linkedinMatch = text.match(linkedinRegex);
+  if (linkedinMatch && isValidLinkedInProfile(linkedinMatch[0])) {
+    return normalizeLinkedInUrl(linkedinMatch[0]);
+  }
+  
+  return "";
+}
+
+function extractGitHub(text, links) {
+  links = links || [];
+  
+  for (var i = 0; i < links.length; i++) {
+    var url = links[i].url;
+    if (url && url.toLowerCase().indexOf("github.com/") !== -1) {
+      var str = url.trim();
+      if (!/^https?:\/\//i.test(str)) {
+        str = "https://" + str;
+      }
+      return str;
+    }
+  }
+  
+  var githubRegex = /github\.com\/[a-zA-Z0-9_-]+/i;
+  var githubMatch = text.match(githubRegex);
+  if (githubMatch) {
+    return "https://" + githubMatch[0];
+  }
+  
+  return "";
+}
+
 // Regular expressions and scores mapping to parse resume details
 function parseCandidateDetails(text, links) {
+  links = links || [];
   var details = {
     name: "",
     email: "",
@@ -2144,18 +2387,6 @@ function parseCandidateDetails(text, links) {
     github: "",
     role: "Sustainability" // default fallback
   };
-
-  var sectionTexts = parseSections(text);
-  var educationText = sectionTexts["Education"] || "";
-  
-  // If Education section is not matched or is very short, combine Header and other safe fallbacks
-  if (educationText.length < 50) {
-    var fallbackText = text;
-    if (sectionTexts["Summary"]) fallbackText = fallbackText.replace(sectionTexts["Summary"], "");
-    if (sectionTexts["Experience"]) fallbackText = fallbackText.replace(sectionTexts["Experience"], "");
-    if (sectionTexts["Projects"]) fallbackText = fallbackText.replace(sectionTexts["Projects"], "");
-    educationText = fallbackText;
-  }
 
   var lines = text.split('\n').map(function (line) { return line.trim(); }).filter(Boolean);
 
@@ -2172,97 +2403,13 @@ function parseCandidateDetails(text, links) {
   // 3. Phone extraction & normalization
   details.phoneNumber = extractAndNormalizePhone(text);
 
-  // 4. LinkedIn and GitHub regex
-  var linkedinUrl = "";
-  links = links || [];
-
-  // Priority 1: Embedded hyperlink
-  for (var i = 0; i < links.length; i++) {
-    var linkUrl = links[i].url;
-    if (isValidLinkedInProfile(linkUrl)) {
-      linkedinUrl = normalizeLinkedInUrl(linkUrl);
-      break;
-    }
-  }
-
-  // Priority 2: Visible LinkedIn URL text
-  if (!linkedinUrl) {
-    var linkedinRegex = /linkedin\.com\/in\/[a-zA-Z0-9_\-\/\.\?\=\&]+/i;
-    var linkedinMatch = text.match(linkedinRegex);
-    if (linkedinMatch && isValidLinkedInProfile(linkedinMatch[0])) {
-      linkedinUrl = normalizeLinkedInUrl(linkedinMatch[0]);
-    }
-  }
-
-  details.linkedin = linkedinUrl; // Fallback = blank
-
-  var githubRegex = /github\.com\/[a-zA-Z0-9_-]+/;
-  var githubMatch = text.match(githubRegex);
-  if (githubMatch) {
-    details.github = "https://" + githubMatch[0];
-  }
-
-  // 5. UG and PG extraction
-  var pgInfo = extractDegreeDetails(educationText, true);
-  var ugInfo = extractDegreeDetails(educationText, false);
-
-  details.ug = ugInfo ? formatDegreeString(ugInfo) : "";
-  details.pg = pgInfo ? formatDegreeString(pgInfo) : "";
-
-  // 6. College Column Formatting: primary college and year
-  var primaryCollegeName = "";
-  var primaryYear = "";
-  if (pgInfo && pgInfo.college) {
-    primaryCollegeName = pgInfo.college;
-    primaryYear = pgInfo.year;
-  } else if (ugInfo && ugInfo.college) {
-    primaryCollegeName = ugInfo.college;
-    primaryYear = ugInfo.year;
-  }
-
-  var collegeField = primaryCollegeName;
-  if (primaryCollegeName && primaryYear) {
-    collegeField = primaryCollegeName + " (" + primaryYear + ")";
-  }
-  details.college = collegeField;
-
-  // 7. Location search
-  var cities = ["Bangalore", "Bengaluru", "Mysore", "Chennai", "Hyderabad"];
-  for (var c = 0; c < cities.length; c++) {
-    var cityRegex = new RegExp("\\b" + cities[c] + "\\b", "i");
-    if (cityRegex.test(text)) {
-      details.location = cities[c];
-      break;
-    }
-  }
-
-  if (!details.location || details.location === "N/A") {
-    for (var k = 0; k < lines.length; k++) {
-      var ln = lines[k];
-      var lnLower = ln.toLowerCase();
-      if (lnLower.indexOf("location:") !== -1 || lnLower.indexOf("address:") !== -1 || lnLower.indexOf("live in") !== -1) {
-        var candidateLoc = ln.replace(/location:/i, "").replace(/address:/i, "").replace(/live\s+in/i, "").trim();
-        if (!isInvalidLocation(candidateLoc)) {
-          details.location = candidateLoc;
-          break;
-        }
-      }
-    }
-  }
-
-  if (!details.location || details.location === "N/A") {
-    var locMatch = text.match(/location\s*:\s*([^\n]+)/i);
-    if (locMatch) {
-      var candidateLoc = locMatch[1].trim();
-      if (!isInvalidLocation(candidateLoc)) {
-        details.location = candidateLoc;
-      }
-    }
-  }
-
-  if (!details.location || isInvalidLocation(details.location)) {
-    details.location = "N/A";
-  }
+  // 4. Independent dedicated extractions
+  details.ug = extractUG(text);
+  details.pg = extractPG(text);
+  details.college = extractCollege(text);
+  details.location = extractLocation(text);
+  details.linkedin = extractLinkedIn(text, links);
+  details.github = extractGitHub(text, links);
 
   return details;
 }
