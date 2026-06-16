@@ -23,7 +23,7 @@ const AppLayout: React.FC = () => {
   };
 
   return (
-    <div className="flex min-h-screen bg-brand-bg/10">
+    <div className="flex min-h-screen bg-white">
       {/* Navigation Sidebar */}
       <Sidebar />
 
@@ -33,7 +33,7 @@ const AppLayout: React.FC = () => {
         <Header title={getPageTitle(location.pathname)} />
 
         {/* Dynamic Route Content */}
-        <main className="p-8 flex-1 bg-brand-bg/30">
+        <main className="p-8 flex-1 bg-[#F9FAFB]">
           <Routes>
             <Route path="/dashboard" element={<Dashboard />} />
             <Route path="/candidates" element={<Candidates />} />

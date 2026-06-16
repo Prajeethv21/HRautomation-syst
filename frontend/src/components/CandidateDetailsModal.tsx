@@ -33,17 +33,17 @@ const getStatusBadgeClass = (status: string) => {
     case 'Submitted':
       return 'bg-gray-50 text-gray-700 border-gray-100';
     case 'Shortlisted':
-      return 'bg-sky-50 text-sky-700 border-sky-100';
+      return 'bg-[#F4F9EC] text-[#2D6A2D] border-[#8CC63F]/20';
     case 'Scheduled':
-      return 'bg-purple-50 text-purple-700 border-purple-100';
+      return 'bg-[#FEF9E7] text-[#B7950B] border-[#F9E79F]';
     case 'Interviewing':
-      return 'bg-sky-50 text-sky-700 border-sky-100';
+      return 'bg-[#F4F9EC] text-[#1B4332] border-[#8CC63F]/20';
     case 'Selected':
       return 'bg-[#EDF9E8] text-[#2D6A2D] border-[#D7F1C8]';
     case 'Rejected':
       return 'bg-[#FFF5F5] text-[#C92A2A] border-[#FFC9C9]';
     case 'On Hold':
-      return 'bg-[#FFFBEB] text-[#92400E] border-[#FDE68A]';
+      return 'bg-[#FEF9E7] text-[#B7950B] border-[#F9E79F]';
     default:
       return 'bg-[#F4F7F5] text-gray-500 border-[#E3ECE6]';
   }
@@ -52,15 +52,15 @@ const getStatusBadgeClass = (status: string) => {
 const getSourceBadgeClass = (source?: string) => {
   switch (source) {
     case 'LinkedIn':
-      return 'bg-sky-50 text-sky-700 border-sky-100';
+      return 'bg-gray-100 text-gray-800 border-gray-200';
     case 'Career Page':
-      return 'bg-teal-50 text-teal-700 border-teal-100';
+      return 'bg-[#EDF9E8] text-[#2D6A2D] border-[#D7F1C8]';
     case 'Referral':
-      return 'bg-purple-50 text-purple-700 border-purple-100';
+      return 'bg-[#FEF9E7] text-[#B7950B] border-[#F9E79F]';
     case 'Website':
-      return 'bg-blue-50 text-blue-700 border-blue-100';
+      return 'bg-gray-100 text-gray-800 border-gray-200';
     case 'Manual Entry':
-      return 'bg-orange-50 text-orange-700 border-orange-100';
+      return 'bg-gray-100 text-gray-800 border-gray-200';
     default:
       return 'bg-gray-50 text-gray-600 border-gray-100';
   }
@@ -128,7 +128,7 @@ const CandidateDetailsModal: React.FC<CandidateDetailsModalProps> = ({
           variant="primary"
           onClick={() => onSendInterview(candidate.email)}
           icon={<Send className="w-4 h-4" />}
-          className="px-6 active:scale-[0.98] bg-purple-600 hover:bg-purple-700 border-purple-600 hover:border-purple-700 text-white"
+          className="px-6 active:scale-[0.98]"
         >
           Send Interview Email
         </Button>
@@ -151,7 +151,7 @@ const CandidateDetailsModal: React.FC<CandidateDetailsModalProps> = ({
       return (
         <button
           disabled
-          className="inline-flex items-center gap-2 px-5 py-2.5 text-xs font-bold rounded-2xl border border-[#BFDBFE] bg-[#EFF6FF] text-[#1D4ED8] opacity-70 cursor-not-allowed"
+          className="inline-flex items-center gap-2 px-5 py-2.5 text-xs font-bold rounded-2xl border border-gray-200 bg-gray-50 text-gray-500 opacity-70 cursor-not-allowed"
         >
           <Clock className="w-4 h-4" />
           In Process
@@ -202,11 +202,11 @@ const CandidateDetailsModal: React.FC<CandidateDetailsModalProps> = ({
       <div className="space-y-6">
         {/* Profile Header Card */}
         <div className="flex items-center gap-4 p-4 bg-brand-bg/40 border border-brand-border/60 rounded-xl">
-          <div className="w-14 h-14 bg-brand/10 border border-brand/20 text-brand flex items-center justify-center font-bold text-lg font-poppins rounded-xl shadow-sm shrink-0 select-none">
+          <div className="w-14 h-14 bg-brand/10 border border-brand/20 text-brand flex items-center justify-center font-bold text-lg font-jakarta rounded-xl shadow-sm shrink-0 select-none">
             {initials}
           </div>
           <div>
-            <h4 className="text-base font-bold text-brand-text font-poppins leading-snug">
+            <h4 className="text-base font-bold text-brand-text font-jakarta leading-snug">
               {candidate.candidateName}
             </h4>
             <span className="inline-flex items-center gap-1.5 text-xs text-gray-500 font-semibold mt-1">
@@ -266,9 +266,9 @@ const CandidateDetailsModal: React.FC<CandidateDetailsModalProps> = ({
               <span className="text-[10px] text-gray-400 font-semibold uppercase tracking-wider block">Letter Dispatch</span>
               <span className={`inline-flex text-[10px] font-bold px-2.5 py-0.5 rounded-full uppercase mt-1 border ${
                   extra.emailStatus && extra.emailStatus.toLowerCase().includes('sent')
-                    ? 'bg-green-50 text-brand border-green-100'
+                    ? 'bg-[#EDF9E8] text-[#2D6A2D] border-[#D7F1C8]'
                     : extra.emailStatus === 'Interview Scheduled'
-                    ? 'bg-purple-50 text-purple-700 border-purple-100'
+                    ? 'bg-[#FEF9E7] text-[#B7950B] border-[#F9E79F]'
                     : 'bg-amber-50 text-amber-700 border-amber-100'
                 }`}>
                 {extra.emailStatus || 'Pending'}
@@ -388,7 +388,7 @@ const CandidateDetailsModal: React.FC<CandidateDetailsModalProps> = ({
                       href={extra.linkedin}
                       target="_blank"
                       rel="noopener noreferrer"
-                      className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold rounded-lg border border-sky-100 bg-sky-50 text-sky-700 hover:bg-sky-100/70 transition-all"
+                      className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold rounded-lg border border-gray-200 bg-gray-50 text-gray-700 hover:bg-gray-100 transition-all"
                     >
                       <Linkedin className="w-3.5 h-3.5" />
                       LinkedIn Profile

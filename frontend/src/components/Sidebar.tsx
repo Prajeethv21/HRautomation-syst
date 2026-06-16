@@ -68,8 +68,8 @@ const Sidebar: React.FC = () => {
               className={({ isActive }) =>
                 `flex items-center gap-3.5 px-3.5 py-3 rounded-xl text-sm font-semibold transition-all duration-200 select-none ${
                   isActive
-                    ? 'bg-[#EDF9E8] text-[#1B4332] shadow-[0_2px_12px_rgba(168,214,114,0.15)]'
-                    : 'text-gray-600 hover:bg-[#EDF9E8]/40 hover:text-brand-text'
+                    ? 'bg-brand-light text-black border-l-4 border-brand pl-2.5 shadow-[0_2px_12px_rgba(140,198,63,0.15)]'
+                    : 'text-gray-600 hover:bg-brand-light/70 hover:text-black'
                 } ${isCollapsed ? 'justify-center' : ''}`
               }
               title={isCollapsed ? item.name : undefined}
@@ -101,7 +101,7 @@ const Sidebar: React.FC = () => {
               }
               setIsDeptsOpen(!isDeptsOpen);
             }}
-            className={`w-full flex items-center justify-between px-3.5 py-3 rounded-xl text-sm font-semibold transition-all duration-205 text-gray-600 hover:bg-[#EDF9E8]/40 hover:text-brand-text select-none ${
+            className={`w-full flex items-center justify-between px-3.5 py-3 rounded-xl text-sm font-semibold transition-all duration-205 text-gray-600 hover:bg-brand-light/70 hover:text-black select-none ${
               isCollapsed ? 'justify-center' : ''
             }`}
             title={isCollapsed ? 'Departments' : undefined}
@@ -131,8 +131,8 @@ const Sidebar: React.FC = () => {
                     className={({ isActive }) =>
                       `flex items-center gap-3 px-3.5 py-2 rounded-xl text-xs font-semibold transition-all duration-200 select-none ${
                         isActive
-                          ? 'bg-[#EDF9E8] text-[#1B4332] font-bold border-l-2 border-[#6FAF45] pl-2.5'
-                          : 'text-gray-500 hover:bg-[#EDF9E8]/35 hover:text-brand-text'
+                          ? 'bg-brand-light text-black font-bold border-l-2 border-brand pl-2.5'
+                          : 'text-gray-500 hover:bg-brand-light/50 hover:text-black'
                       }`
                     }
                   >

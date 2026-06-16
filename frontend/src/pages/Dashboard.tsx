@@ -1,8 +1,17 @@
 import React, { useEffect, useState } from 'react';
 import { getCandidates, type Candidate } from '../services/googleAppsScript';
-import { Users, Clock, Send, UserCheck, ArrowRight, Building2 } from 'lucide-react';
+import { Users, Clock, Send, UserCheck, ArrowRight, Brain, Code, Megaphone, Palette, Leaf, Briefcase } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { DEPARTMENTS } from '../config/departments';
+
+const DEPARTMENT_ICONS: Record<string, React.ComponentType<any>> = {
+  sustainability: Leaf,
+  'ai-data-engineer': Brain,
+  'web-developer': Code,
+  marketing: Megaphone,
+  creative: Palette,
+  others: Briefcase,
+};
 
 const Dashboard: React.FC = () => {
   const [candidates, setCandidates] = useState<Candidate[]>([]);
@@ -69,71 +78,71 @@ const Dashboard: React.FC = () => {
       title: 'Total Candidates',
       value: totalCandidates,
       icon: Users,
-      iconBg: 'bg-[#EDF9E8] text-[#6FAF45] border border-[#D7F1C8]',
+      iconBg: 'bg-brand-light text-black border border-brand/20',
       badgeText: (
         <span className="flex items-center gap-1.5">
-          <span className="w-1.5 h-1.5 rounded-full bg-[#6FAF45]" />
+          <span className="w-1.5 h-1.5 rounded-full bg-[#8CC63F]" />
+          Active
         </span>
       ),
-      badgeClass: 'bg-[#EDF9E8] text-[#6FAF45] border-[#D7F1C8]'
+      badgeClass: 'bg-[#F4F9EC] text-[#2D6A2D] border-brand/20',
+      subtitle: 'Total applications received'
     },
     {
       title: 'Pending Emails',
       value: pendingEmails,
       icon: Clock,
-      iconBg: 'bg-[#FCFBF4] text-[#8B7D3A] border border-[#F3F0D3]',
+      iconBg: 'bg-amber-50 text-amber-700 border border-amber-100',
       badgeText: pendingEmails > 0 ? 'Action Required' : 'All Sent',
       badgeClass: pendingEmails > 0
-        ? 'bg-[#FCFBF4] text-[#8B7D3A] border-[#F3F0D3]'
-        : 'bg-[#EDF9E8] text-[#6FAF45] border-[#D7F1C8]'
+        ? 'bg-amber-50 text-amber-700 border-amber-100'
+        : 'bg-[#F4F9EC] text-[#2D6A2D] border-brand/20',
+      subtitle: pendingEmails > 0 ? 'Requires attention' : 'All workflows clear'
     },
     {
       title: 'Emails Sent',
       value: emailsSent,
       subtitle: `${emailsSent} letters dispatched`,
       icon: Send,
-      iconBg: 'bg-[#EDF9E8] text-[#6FAF45] border border-[#D7F1C8]',
-      badgeClass: 'bg-[#EDF9E8] text-[#6FAF45] border-[#D7F1C8]'
+      iconBg: 'bg-brand-light text-black border border-brand/20',
+      badgeText: 'Dispatched',
+      badgeClass: 'bg-[#F4F9EC] text-[#2D6A2D] border-brand/20'
     },
     {
       title: 'Selected Candidates',
       value: selectedCandidates,
       icon: UserCheck,
-      iconBg: 'bg-[#F4FAF1] text-[#4E8B3A] border border-[#D9ECCB]',
+      iconBg: 'bg-brand-light text-black border border-brand/20',
       badgeText: selectedCandidates > 0 ? 'Onboarding' : 'Complete',
-      badgeClass: 'bg-[#F4FAF1] text-[#4E8B3A] border-[#D9ECCB]'
+      badgeClass: 'bg-[#F4F9EC] text-[#2D6A2D] border-brand/20',
+      subtitle: 'Qualified candidates'
     }
   ];
 
   return (
     <div className="space-y-8 relative z-10">
-      {/* Premium Hero Banner (Animations Removed) */}
-      <div className="relative bg-gradient-to-br from-[#F8FFF6] via-[#EDF9E8] to-[#E6F7E2] rounded-3xl p-8 shadow-sm overflow-hidden border border-[#A8D672]/30">
-        <div className="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-6">
-          <div className="space-y-3 max-w-xl">
-            <span className="text-xs uppercase font-extrabold tracking-wider text-[#6FAF45] select-none font-jakarta block">
-              Deepwoods Green
-            </span>
+      {/* Page Header (Clean typography and spacing, no background container) */}
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-6 pb-6 border-b border-[#E5E7EB]">
+        <div className="space-y-1.5">
+          <span className="text-xs uppercase font-bold tracking-wider text-[#6FAF45] select-none font-jakarta block">
+            Deepwoods Green
+          </span>
+          <h1 className="text-3xl font-bold font-jakarta tracking-tight text-[#111111]">
+            HR Automation Portal
+          </h1>
+          <p className="text-gray-500 font-medium text-sm">
+            Automating joining letter operations and candidate workflows.
+          </p>
+        </div>
 
-            <div className="space-y-1">
-              <h1 className="text-2xl md:text-3xl font-extrabold font-jakarta tracking-tight leading-tight text-[#1C2E24]">
-                HR Automation Portal
-              </h1>
-              <p className="text-[#6FAF45]/90 font-semibold text-sm">
-                Automating Joining Letter Operations
-              </p>
-            </div>
-          </div>
-
-          <div className="relative z-10 shrink-0">
-            <Link
-              to="/candidates"
-              className="inline-flex items-center gap-2 text-xs font-extrabold bg-[#6FAF45] text-white px-5 py-3 rounded-2xl hover:bg-[#5f953a] transition-all duration-200 shadow-md active:scale-95 group font-jakarta"
-            >
-              Manage Candidates Directory
-              <ArrowRight className="w-4 h-4 text-white transition-transform duration-300 group-hover:translate-x-1" />
-            </Link>
-          </div>
+        <div className="shrink-0">
+          <Link
+            to="/candidates"
+            className="inline-flex items-center gap-2 text-xs font-bold bg-[#8CC63F] text-black px-5 py-2.5 rounded-xl hover:bg-[#7cb434] transition-all duration-150 shadow-sm active:scale-95 group font-jakarta"
+          >
+            Manage Candidates Directory
+            <ArrowRight className="w-4 h-4 text-black transition-transform duration-200 group-hover:translate-x-0.5" />
+          </Link>
         </div>
       </div>
 
@@ -148,7 +157,7 @@ const Dashboard: React.FC = () => {
       {loading ? (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
           {[...Array(4)].map((_, i) => (
-            <div key={i} className="bg-white border border-brand-border p-6 rounded-2xl shadow-sm h-32 animate-pulse flex flex-col justify-between relative overflow-hidden">
+            <div key={i} className="bg-white border border-[#E5E7EB] p-6 rounded-2xl shadow-sm h-[160px] animate-pulse flex flex-col justify-between relative overflow-hidden">
               <div className="flex justify-between items-start">
                 <div className="space-y-3 w-2/3">
                   <div className="h-3 bg-gray-200 rounded w-1/2" />
@@ -167,29 +176,31 @@ const Dashboard: React.FC = () => {
             return (
               <div
                 key={card.title}
-                className="bg-white border border-brand-border p-6 rounded-2xl shadow-sm hover:shadow-md hover:border-brand-accent/25 hover:-translate-y-1 transition-all duration-300 flex flex-col justify-between cursor-pointer"
+                className="bg-white border border-[#E5E7EB] p-6 rounded-2xl shadow-sm h-[160px] hover:border-[#8CC63F]/50 hover:shadow-sm transition-all duration-200 flex flex-col justify-between cursor-pointer"
               >
                 <div className="flex justify-between items-start">
                   <div>
-                    <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider font-jakarta">
+                    <span className="text-xs font-semibold text-gray-400 uppercase tracking-wider font-jakarta">
                       {card.title}
                     </span>
-                    <h3 className="text-3xl font-extrabold text-brand-text mt-1.5 font-jakarta tracking-tight">
+                    <h3 className="text-3xl font-extrabold text-[#111111] mt-1.5 font-jakarta tracking-tight">
                       {card.value}
                     </h3>
                   </div>
-                  <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${card.iconBg}`}>
+                  <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${card.iconBg}`}>
                     <Icon className="w-5 h-5" />
                   </div>
                 </div>
 
-                <div className="flex items-center justify-between border-t border-brand-border/60 pt-4 mt-4">
-                  <span className="text-xs text-gray-500 font-semibold truncate pr-2">
+                <div className="flex items-center justify-between border-t border-[#E5E7EB] pt-4">
+                  <span className="text-xs text-gray-500 font-medium truncate pr-2">
                     {card.subtitle}
                   </span>
-                  <span className={`text-[10px] font-extrabold px-2.5 py-1 rounded-full uppercase border ${card.badgeClass}`}>
-                    {card.badgeText}
-                  </span>
+                  {card.badgeText && (
+                    <span className={`text-[10px] font-extrabold px-2.5 py-1 rounded-full uppercase border shrink-0 ${card.badgeClass}`}>
+                      {card.badgeText}
+                    </span>
+                  )}
                 </div>
               </div>
             );
@@ -205,29 +216,27 @@ const Dashboard: React.FC = () => {
         {loading ? (
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
             {[...Array(3)].map((_, i) => (
-              <div key={i} className="bg-white border border-brand-border p-6 rounded-2xl shadow-sm h-40 animate-pulse flex flex-col justify-between" />
+              <div key={i} className="bg-white border border-brand-border p-6 rounded-2xl shadow-sm h-[196px] animate-pulse flex flex-col justify-between" />
             ))}
           </div>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
             {DEPARTMENTS.map((dept) => {
               const stats = deptStats[dept.id] || { total: 0, selected: 0, interviewing: 0, onHold: 0, rejected: 0 };
+              const DeptIcon = DEPARTMENT_ICONS[dept.id] || Briefcase;
               return (
                 <Link to={`/departments/${dept.id}`} key={dept.id}>
                   <div
-                    className="bg-white border border-brand-border p-5 rounded-2xl shadow-sm hover:shadow-md hover:border-brand-accent/25 hover:-translate-y-1 transition-all duration-300 flex flex-col justify-between h-full select-none cursor-pointer"
+                    className="bg-white border border-[#E5E7EB] p-5 rounded-2xl shadow-sm hover:border-[#8CC63F]/50 hover:shadow-md transition-all duration-200 flex flex-col justify-between h-[196px] select-none cursor-pointer"
                   >
                     <div className="flex justify-between items-start">
                       <div>
-                        <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider font-jakarta">
-                          ATS Department
-                        </span>
-                        <h4 className="text-base font-extrabold text-brand-text mt-1 font-jakarta truncate max-w-[160px]">
+                        <h4 className="text-base font-bold text-brand-text mt-1 font-jakarta truncate max-w-[160px]">
                           {dept.name}
                         </h4>
                       </div>
-                      <div className="w-9 h-9 rounded-xl flex items-center justify-center bg-[#EDF9E8] text-[#6FAF45] border border-[#D7F1C8]">
-                        <Building2 className="w-4.5 h-4.5" />
+                      <div className="w-9 h-9 rounded-xl flex items-center justify-center bg-[#F4F9EC] text-black border border-brand/20 shrink-0">
+                        <DeptIcon className="w-4.5 h-4.5 text-[#6FAF45]" />
                       </div>
                     </div>
 
@@ -238,19 +247,19 @@ const Dashboard: React.FC = () => {
                       </div>
                       
                       <div className="grid grid-cols-4 gap-1.5 pt-1">
-                        <div className="bg-[#EDF9E8]/80 text-[#2D6A2D] border border-[#D7F1C8]/60 rounded-xl px-1 py-1.5 text-center flex flex-col items-center">
+                        <div className="bg-brand-light text-[#2D6A2D] border border-brand/10 rounded-xl px-1 py-1.5 text-center flex flex-col items-center">
                           <span className="text-[8px] font-bold uppercase tracking-wide opacity-75">Selected</span>
                           <span className="text-xs font-extrabold mt-0.5">{stats.selected}</span>
                         </div>
-                        <div className="bg-sky-50/80 text-sky-700 border border-sky-100/60 rounded-xl px-1 py-1.5 text-center flex flex-col items-center">
+                        <div className="bg-sky-50 text-sky-700 border border-sky-100 rounded-xl px-1 py-1.5 text-center flex flex-col items-center">
                           <span className="text-[8px] font-bold uppercase tracking-wide opacity-75">Interview</span>
                           <span className="text-xs font-extrabold mt-0.5">{stats.interviewing}</span>
                         </div>
-                        <div className="bg-[#FFFBEB]/80 text-[#92400E] border border-[#FDE68A]/60 rounded-xl px-1 py-1.5 text-center flex flex-col items-center">
+                        <div className="bg-amber-50 text-amber-700 border border-amber-100 rounded-xl px-1 py-1.5 text-center flex flex-col items-center">
                           <span className="text-[8px] font-bold uppercase tracking-wide opacity-75">On Hold</span>
                           <span className="text-xs font-extrabold mt-0.5">{stats.onHold}</span>
                         </div>
-                        <div className="bg-[#FFF5F5]/80 text-[#C92A2A] border border-[#FFC9C9]/60 rounded-xl px-1 py-1.5 text-center flex flex-col items-center">
+                        <div className="bg-red-50 text-red-700 border border-red-200 rounded-xl px-1 py-1.5 text-center flex flex-col items-center">
                           <span className="text-[8px] font-bold uppercase tracking-wide opacity-75">Rejected</span>
                           <span className="text-xs font-extrabold mt-0.5">{stats.rejected}</span>
                         </div>

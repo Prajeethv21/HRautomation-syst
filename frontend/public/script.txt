@@ -25,11 +25,14 @@ const IS_TESTING_MODE = true; // Set to true to schedule reminders 1 minute befo
 const RESUME_FOLDER_ID = "12345_PLACEHOLDER_FOLDER_ID_67890";
 
 // Configure Department Sheet Mapping
+// IMPORTANT: Values must EXACTLY match the tab names in Google Sheets.
+// Sheet tab names as they currently exist in the spreadsheet:
+//   AI/Data Engineer, Sustainability, Web Developer, Marketing, Creative, Others
 const ROLE_TO_SHEET_MAP = {
   "Sustainability": "Sustainability",
-  "AI Automation Engineer": "AI Automation Engineer",
-  "AI/Data Engineer": "AI Automation Engineer",
-  "Web Developer": "Web Devloper",
+  "AI Automation Engineer": "AI/Data Engineer",
+  "AI/Data Engineer": "AI/Data Engineer",
+  "Web Developer": "Web Developer",
   "Marketing": "Marketing",
   "Creative": "Creative",
   "Others": "Others",
@@ -327,7 +330,7 @@ function onEdit(e) {
   if (oldStatus === val) return; // No change
   
   if (sheetName === "Candidates" && col === 5) {
-    // Candidates status changed -> sync to Department sheet column K (11)
+    // Candidates status changed -> sync to Department sheet column J (10)
     var email = sheet.getRange(row, 2).getValue().toString().trim();
     var role = sheet.getRange(row, 3).getValue().toString().trim();
     var deptSheetName = ROLE_TO_SHEET_MAP[role] || role;
@@ -337,7 +340,7 @@ function onEdit(e) {
         var deptData = deptSheet.getDataRange().getValues();
         for (var i = 1; i < deptData.length; i++) {
           if (deptData[i][1] && deptData[i][1].toString().trim().toLowerCase() === email.toLowerCase()) {
-            var deptStatusCell = deptSheet.getRange(i + 1, 11);
+            var deptStatusCell = deptSheet.getRange(i + 1, 10);
             if (deptStatusCell.getValue().toString().trim() !== val) {
               deptStatusCell.setValue(val);
             }
@@ -349,7 +352,7 @@ function onEdit(e) {
     // Trigger any side effects (like auto shortlist/review emails)
     triggerTransitionSideEffects(null, email, oldStatus, val);
     
-  } else if (sheetName !== "Candidates" && sheetName !== "ProcessedResumes" && sheetName !== "ProcessedResumesLog" && col === 11) {
+  } else if (sheetName !== "Candidates" && sheetName !== "ProcessedResumes" && sheetName !== "ProcessedResumesLog" && col === 10) {
     // Department status changed -> sync to Candidates sheet column E (5)
     var email = sheet.getRange(row, 2).getValue().toString().trim();
     if (email) {
@@ -471,6 +474,7 @@ function doPost(e) {
     var action = data.action;
     var sheetId = data.sheetId;
     var candidateEmail = data.candidateEmail || data.email;
+    var groqApiKey = data.groqApiKey || "";
 
     if (action === "sendJoiningLetter") {
       return handleSendJoiningLetter(sheetId, candidateEmail);
@@ -491,7 +495,11 @@ function doPost(e) {
     }
 
     if (action === "processResumes") {
-      return handleProcessResumes(sheetId);
+      return handleProcessResumes(sheetId, groqApiKey);
+    }
+
+    if (action === "repairData") {
+      return handleRepairData(sheetId, groqApiKey);
     }
 
     if (action === "sendInterviewEmail") {
@@ -813,8 +821,8 @@ function handleUpdateCandidateStatus(sheetId, candidateEmail, newStatus) {
         }
 
         if (deptRowIndex !== -1) {
-          // Status column in Department sheet is at index 10 (Column K, 11th column)
-          var deptStatusCell = deptSheet.getRange(deptRowIndex, 11);
+          // Status column in Department sheet is column 10 (J), not 11
+          var deptStatusCell = deptSheet.getRange(deptRowIndex, 10);
           deptStatusCell.setValue(newStatus);
           Logger.log('SUCCESS: Updated department sheet status at row ' + deptRowIndex + ' in ' + deptSheetName);
         } else {
@@ -902,6 +910,30 @@ function handleGetDepartmentCandidates(sheetId, sheetName) {
   }
 }
 
+// Helper: Build status dropdown validation rule
+function createStatusValidationRule() {
+  return SpreadsheetApp.newDataValidation()
+    .requireValueInList([
+      "Submitted",
+      "Shortlisted",
+      "Scheduled",
+      "On Hold",
+      "Selected",
+      "Rejected"
+    ], true)
+    .setAllowInvalid(false)
+    .build();
+}
+
+// Helper: Apply status dropdown to a specific cell
+function applyStatusDropdown(sheet, rowIndex, colIndex) {
+  try {
+    sheet.getRange(rowIndex, colIndex).setDataValidation(createStatusValidationRule());
+  } catch (e) {
+    Logger.log("[WARN] Could not apply status dropdown: " + e.toString());
+  }
+}
+
 // REST Endpoint Helper: Ingest a candidate and auto-route them to the correct department
 function handleCreateCandidate(sheetId, candidate) {
   try {
@@ -909,8 +941,45 @@ function handleCreateCandidate(sheetId, candidate) {
       return makeJsonResponse({ success: false, message: "Candidate name and email are required" }, 400);
     }
 
-    // Run validation to replace failed/error values with blank strings
-    var clean = validateAndCleanCandidate(candidate);
+    var clean = {
+      name: candidate.name ? candidate.name.toString().trim() : "",
+      email: candidate.email ? candidate.email.toString().trim() : "",
+      phoneNumber: candidate.phoneNumber ? candidate.phoneNumber.toString().trim() : "",
+      ug: candidate.ug ? candidate.ug.toString().trim() : "",
+      pg: candidate.pg ? candidate.pg.toString().trim() : "",
+      college: candidate.college ? candidate.college.toString().trim() : "",
+      location: candidate.location ? candidate.location.toString().trim() : "N/A",
+      linkedin: candidate.linkedin ? candidate.linkedin.toString().trim() : "",
+      github: candidate.github ? candidate.github.toString().trim() : "",
+      role: candidate.role || "Sustainability",
+      status: candidate.status || "Submitted",
+      emailStatus: candidate.emailStatus || "Pending",
+      source: candidate.source || "Website",
+      joiningDate: candidate.joiningDate || "",
+      interviewDate: candidate.interviewDate || "",
+      interviewTime: candidate.interviewTime || ""
+    };
+
+    Logger.log("[CREATE] Candidate: " + clean.name + " | Role: " + clean.role);
+    Logger.log("[CREATE] UG: " + clean.ug);
+    Logger.log("[CREATE] PG: " + clean.pg);
+    Logger.log("[CREATE] College: " + clean.college);
+    Logger.log("[CREATE] Location: " + clean.location);
+    Logger.log("[CREATE] LinkedIn: " + clean.linkedin);
+    Logger.log("[CREATE] Phone raw value: " + JSON.stringify(clean.phoneNumber) + " (type: " + typeof clean.phoneNumber + ")");
+    var phone = clean.phoneNumber;
+    var phoneStr = String(phone || '');
+    var phoneToWrite = "";
+    var phoneStrLower = phoneStr.toLowerCase().trim();
+    if (phoneStrLower && 
+        phoneStrLower !== "undefined" && 
+        phoneStrLower !== "null" && 
+        phoneStrLower !== "object" && 
+        phoneStrLower.indexOf("object") === -1 && 
+        phoneStrLower.indexOf("#error") === -1) {
+      phoneToWrite = formatSheetValue(phoneStr);
+    }
+    Logger.log("phoneToWrite: " + phoneToWrite);
 
     const masterSheet = getSheetByName(sheetId, "Candidates");
     const masterData = masterSheet.getDataRange().getValues();
@@ -926,11 +995,18 @@ function handleCreateCandidate(sheetId, candidate) {
     }
 
     if (candidateExists) {
+      Logger.log("[CREATE] SKIPPED: Duplicate email: " + clean.email);
       return makeJsonResponse({ success: false, message: "Candidate with email " + clean.email + " already exists" }, 400);
     }
 
     // 1. Add to Candidates master sheet (exactly 9 columns)
     // Columns: Candidate Name, Email Address, Role Applied For, Joining Date, Status, Email Status, Source, Interview Date, Interview Time
+    Logger.log("Candidate details before appendRow:\n" +
+               "name: " + clean.name + "\n" +
+               "ug: " + clean.ug + "\n" +
+               "pg: " + clean.pg + "\n" +
+               "college: " + clean.college + "\n" +
+               "location: " + clean.location);
     masterSheet.appendRow([
       clean.name,
       clean.email,
@@ -942,34 +1018,39 @@ function handleCreateCandidate(sheetId, candidate) {
       formatSheetValue(clean.interviewDate),
       formatSheetValue(clean.interviewTime)
     ]);
+    // Apply status dropdown to Candidates sheet (Status = col 5)
+    var masterLastRow = masterSheet.getLastRow();
+    applyStatusDropdown(masterSheet, masterLastRow, 5);
+    Logger.log("[CREATE] Master sheet row appended at row " + masterLastRow);
 
-    // 2. Add to Department sheet (exactly 10 columns, no Source or Resume File ID)
-    const deptSheetName = ROLE_TO_SHEET_MAP[clean.role] || clean.role;
+    // 2. Add to Department sheet (exactly 10 columns)
+    var deptSheetName = ROLE_TO_SHEET_MAP[clean.role] || clean.role;
+    Logger.log("[CREATE] Routing to department sheet: " + deptSheetName);
+
     if (deptSheetName) {
-      let deptSheet = getSheetByName(sheetId, deptSheetName);
+      var deptSheet = getSheetByName(sheetId, deptSheetName);
       if (!deptSheet) {
         // Create the department sheet dynamically if missing
-        const ss = sheetId ? SpreadsheetApp.openById(sheetId) : SpreadsheetApp.getActiveSpreadsheet();
+        var ss = sheetId ? SpreadsheetApp.openById(sheetId) : SpreadsheetApp.getActiveSpreadsheet();
         deptSheet = ss.insertSheet(deptSheetName);
         deptSheet.appendRow([
-          "Candidate Name",
-          "Email",
-          "Phone Number",
-          "UG",
-          "PG",
-          "College",
-          "Location",
-          "LinkedIn",
-          "GitHub",
-          "Status"
+          "Candidate Name", "Email", "Phone Number", "UG", "PG",
+          "College", "Location", "LinkedIn", "GitHub", "Status"
         ]);
+        Logger.log("[CREATE] Created new department sheet: " + deptSheetName);
       }
 
       // Columns: Candidate Name, Email, Phone Number, UG, PG, College, Location, LinkedIn, GitHub, Status
+      Logger.log("Candidate details before department appendRow:\n" +
+                 "name: " + clean.name + "\n" +
+                 "ug: " + clean.ug + "\n" +
+                 "pg: " + clean.pg + "\n" +
+                 "college: " + clean.college + "\n" +
+                 "location: " + clean.location);
       deptSheet.appendRow([
         clean.name,
         clean.email,
-        clean.phoneNumber,
+        phoneToWrite,
         clean.ug,
         clean.pg,
         clean.college,
@@ -978,22 +1059,180 @@ function handleCreateCandidate(sheetId, candidate) {
         clean.github,
         formatSheetValue(clean.status)
       ]);
+      // Apply status dropdown to department sheet (Status = col 10)
+      var deptLastRow = deptSheet.getLastRow();
+      applyStatusDropdown(deptSheet, deptLastRow, 10);
+      Logger.log("[CREATE] Dept sheet row appended at row " + deptLastRow + " in " + deptSheetName);
     }
 
     return makeJsonResponse({ success: true, message: "Candidate created and routed to " + deptSheetName }, 200);
 
   } catch (error) {
+    Logger.log("[CREATE ERROR] " + error.toString());
     return makeJsonResponse({ success: false, message: "Failed to create candidate: " + error.toString() }, 500);
   }
 }
 
-// REST Endpoint Helper: Trigger Resume Scan of designated Google Drive folder
-function handleProcessResumes(sheetId) {
+function resolveRoleFolderId(parentId, roleName) {
+  // Try exact name first
+  var query = "title = '" + roleName.replace(/'/g, "\\'") + "' and mimeType = 'application/vnd.google-apps.folder' and trashed = false and '" + parentId + "' in parents";
+  var list = Drive.Files.list({ q: query, maxResults: 1 });
+  if (list.items && list.items.length > 0) {
+    return list.items[0].id;
+  }
+  
+  // If roleName contains a slash, try replacing with dash, space, or underscore
+  if (roleName.indexOf('/') !== -1) {
+    var variations = [
+      roleName.replace(/\//g, '-'),
+      roleName.replace(/\//g, ' '),
+      roleName.replace(/\//g, '_')
+    ];
+    for (var i = 0; i < variations.length; i++) {
+      var q = "title = '" + variations[i].replace(/'/g, "\\'") + "' and mimeType = 'application/vnd.google-apps.folder' and trashed = false and '" + parentId + "' in parents";
+      var l = Drive.Files.list({ q: q, maxResults: 1 });
+      if (l.items && l.items.length > 0) {
+        Logger.log("[SCAN] Found existing matching folder for '" + roleName + "' named '" + variations[i] + "'");
+        return l.items[0].id;
+      }
+    }
+  }
+  
+  // If not found, create it using the original name
+  var resource = {
+    title: roleName,
+    mimeType: "application/vnd.google-apps.folder",
+    parents: [{ id: parentId }]
+  };
+  var newFolder = Drive.Files.insert(resource);
+  Logger.log("[SCAN] Created new folder for '" + roleName + "'");
+  return newFolder.id;
+}
+
+// ============================================================
+// ONE-TIME DATA REPAIR: Run this from the Apps Script editor
+// to fix existing rows where college was merged into UG column.
+// Instructions:
+//   1. Open Apps Script editor
+//   2. Select "repairDepartmentSheetData" in the function dropdown
+//   3. Click the ▶ Run button
+//   4. Open View > Logs to see what was fixed
+// ============================================================
+function repairDepartmentSheetData() {
+  var SHEET_ID = "1KmEOk4qn0gF8pAbBUNCcrXuw2U4P3x18eVLAUxe1vtM";
+  var ss = SpreadsheetApp.openById(SHEET_ID);
+
+  // Skip these sheets — they are not department sheets
+  var SKIP_SHEETS = ["Candidates", "ProcessedResumes", "ProcessedResumesLog"];
+
+  // Institution name pattern — detect college names embedded in UG field
+  var collegePattern = /\b(university|college|institute|school|academy|vidyapeeth|iit|nit|bits|zell|institution|deemed|center|centre|medical|technological|dayananda|ramaiah|sagar|jain|vtu|manipal|reva|rvce|bmsce|bms|pes|rnsit|msrit|christ|presidency)\b/i;
+
+  var totalFixed = 0;
+
+  // Auto-discover ALL sheets instead of hardcoding names
+  var allSheets = ss.getSheets();
+  Logger.log("[REPAIR] Found " + allSheets.length + " total sheets in spreadsheet.");
+
+  for (var s = 0; s < allSheets.length; s++) {
+    var sheet = allSheets[s];
+    var sheetName = sheet.getName();
+
+    // Skip non-department sheets
+    if (SKIP_SHEETS.indexOf(sheetName) !== -1) {
+      Logger.log("[REPAIR] Skipping: " + sheetName);
+      continue;
+    }
+
+    var data = sheet.getDataRange().getValues();
+    Logger.log("[REPAIR] Scanning sheet: '" + sheetName + "' (" + (data.length - 1) + " data rows)");
+
+    if (data.length <= 1) {
+      Logger.log("[REPAIR] " + sheetName + " has no data rows, skipping.");
+      continue;
+    }
+
+    // Log the header row to confirm column positions
+    Logger.log("[REPAIR] Headers: " + JSON.stringify(data[0]));
+
+    for (var i = 1; i < data.length; i++) {
+      var ugVal = data[i][3] ? data[i][3].toString().trim() : "";     // col D = UG
+      var pgVal = data[i][4] ? data[i][4].toString().trim() : "";     // col E = PG
+      var collegeVal = data[i][5] ? data[i][5].toString().trim() : ""; // col F = College
+
+      Logger.log("[REPAIR] Row " + (i+1) + " — UG: '" + ugVal + "' | PG: '" + pgVal + "' | College: '" + collegeVal + "'");
+
+      if (!ugVal && !pgVal) continue;
+
+      // Fix UG: if it contains a college-like word AND College column is empty
+      var valToRepair = ugVal || pgVal;
+      var colIndex = ugVal ? 3 : 4; // 0-based: col D or col E
+      var sheetColIndex = ugVal ? 4 : 5; // 1-based for getRange: col 4 (D) or 5 (E)
+
+      if (collegePattern.test(valToRepair) && !collegeVal) {
+        var fixed = false;
+
+        // Strategy 1: split on comma
+        var commaParts = valToRepair.split(",");
+        if (commaParts.length >= 2) {
+          var degreeCandidate = commaParts[0].trim();
+          var collegeCandidate = commaParts.slice(1).join(",").trim();
+          if (collegePattern.test(collegeCandidate) && degreeCandidate.length > 3) {
+            Logger.log("[REPAIR] ✓ Row " + (i+1) + " FIXED (comma split): '" + valToRepair + "' → degree='" + degreeCandidate + "' college='" + collegeCandidate + "'");
+            sheet.getRange(i + 1, sheetColIndex).setValue(degreeCandidate);
+            sheet.getRange(i + 1, 6).setValue(collegeCandidate); // College always col 6
+            totalFixed++;
+            fixed = true;
+          }
+        }
+
+        // Strategy 2: split on dash / "at" / "from"
+        if (!fixed) {
+          var dashParts = valToRepair.split(/\s*[-–—]\s*|\s+at\s+|\s+from\s+/i);
+          if (dashParts.length >= 2) {
+            var degreeCandidate = dashParts[0].trim();
+            var collegeCandidate = dashParts.slice(1).join(" - ").trim();
+            if (collegePattern.test(collegeCandidate) && degreeCandidate.length > 3) {
+              Logger.log("[REPAIR] ✓ Row " + (i+1) + " FIXED (dash split): '" + valToRepair + "' → degree='" + degreeCandidate + "' college='" + collegeCandidate + "'");
+              sheet.getRange(i + 1, sheetColIndex).setValue(degreeCandidate);
+              sheet.getRange(i + 1, 6).setValue(collegeCandidate);
+              totalFixed++;
+              fixed = true;
+            }
+          }
+        }
+
+        if (!fixed) {
+          Logger.log("[REPAIR] ✗ Row " + (i+1) + ": could not auto-split '" + valToRepair + "' — manual fix needed.");
+        }
+      }
+    }
+  }
+
+  Logger.log("[REPAIR] ========================================");
+  Logger.log("[REPAIR] Complete. Fixed " + totalFixed + " row(s) across all department sheets.");
+  Logger.log("[REPAIR] ========================================");
+  // NOTE: SpreadsheetApp.getUi() is intentionally NOT called here
+  // because it causes errors when run from the Apps Script editor trigger.
+}
+
+
+function handleProcessResumes(sheetId, groqApiKey) {
+  Logger.log("ENTERED handleProcessResumes");
   try {
-    const count = processIncomingResumes(sheetId);
+    const count = processIncomingResumes(sheetId, groqApiKey);
     return makeJsonResponse({ success: true, message: "Processed " + count + " new resumes." }, 200);
   } catch (error) {
     return makeJsonResponse({ success: false, message: "Failed to process resumes: " + error.toString() }, 500);
+  }
+}
+
+function handleRepairData(sheetId, groqApiKey) {
+  try {
+    runExistingDataRepair(groqApiKey);
+    return makeJsonResponse({ success: true, message: "Data repair and sync completed successfully." }, 200);
+  } catch (error) {
+    return makeJsonResponse({ success: false, message: "Data repair failed: " + error.toString() }, 500);
   }
 }
 
@@ -1034,213 +1273,12 @@ function moveProcessedResume(fileId, sourceName, roleName, hrResumesFolderId) {
   });
 }
 
-function cleanUGDegree(line) {
-  if (!line) return "";
-  var cleaned = line
-    .replace(/\b\d{4}\s*(?:-|–|to)?\s*\d{4}\b/g, "")
-    .replace(/\b\d{4}\b/g, "")
-    .replace(/\b(?:gpa|cgpa|grade|score|marks?)\s*:\s*\d+(?:\.\d+)?\b/gi, "")
-    .replace(/\b\d+(?:\.\d+)?\s*(?:%|gpa|cgpa)\b/gi, "")
-    .trim();
-  var degreeMatch = cleaned.match(/\b(B\.?Tech|B\.?E|B\.?Sc|B\.?C|B\.?A|B\.?Com|B\.?B\.?A|Bachelor\s+of\s+[A-Za-z]+)\b/i);
-  if (degreeMatch) {
-    var degree = degreeMatch[1];
-    var afterPart = cleaned.substring(cleaned.indexOf(degree) + degree.length).trim();
-    afterPart = afterPart.replace(/^(?:in\s+|of\s+)/i, "").trim();
-    var parts = afterPart.split(/[,;\-—|]|\bat\b|\bfrom\b/i);
-    var major = parts[0] ? parts[0].trim() : "";
-    var normalizedDegree = degree.replace(/\./g, "");
-    if (normalizedDegree.toLowerCase() === "btech") normalizedDegree = "B.Tech";
-    else if (normalizedDegree.toLowerCase() === "be") normalizedDegree = "B.E";
-    else if (normalizedDegree.toLowerCase() === "bsc") normalizedDegree = "B.Sc";
-    else if (normalizedDegree.toLowerCase() === "ba") normalizedDegree = "B.A";
-    else if (normalizedDegree.toLowerCase() === "bcom") normalizedDegree = "B.Com";
-    else if (normalizedDegree.toLowerCase() === "bba") normalizedDegree = "B.B.A";
-    return major ? (normalizedDegree + " " + major).replace(/\s+/g, " ") : normalizedDegree;
-  }
-  return cleaned;
-}
 
-function cleanPGDegree(line) {
-  if (!line) return "";
-  var cleaned = line
-    .replace(/\b\d{4}\s*(?:-|–|to)?\s*\d{4}\b/g, "")
-    .replace(/\b\d{4}\b/g, "")
-    .replace(/\b(?:gpa|cgpa|grade|score|marks?)\s*:\s*\d+(?:\.\d+)?\b/gi, "")
-    .replace(/\b\d+(?:\.\d+)?\s*(?:%|gpa|cgpa)\b/gi, "")
-    .trim();
-  var degreeMatch = cleaned.match(/\b(M\.?Tech|M\.?E|M\.?Sc|M\.?A|M\.?Com|M\.?B\.?A|Master\s+of\s+[A-Za-z]+)\b/i);
-  if (degreeMatch) {
-    var degree = degreeMatch[1];
-    var afterPart = cleaned.substring(cleaned.indexOf(degree) + degree.length).trim();
-    afterPart = afterPart.replace(/^(?:in\s+|of\s+)/i, "").trim();
-    var parts = afterPart.split(/[,;\-—|]|\bat\b|\bfrom\b/i);
-    var major = parts[0] ? parts[0].trim() : "";
-    var normalizedDegree = degree.replace(/\./g, "");
-    if (normalizedDegree.toLowerCase() === "mtech") normalizedDegree = "M.Tech";
-    else if (normalizedDegree.toLowerCase() === "me") normalizedDegree = "M.E";
-    else if (normalizedDegree.toLowerCase() === "msc") normalizedDegree = "M.Sc";
-    else if (normalizedDegree.toLowerCase() === "ma") normalizedDegree = "M.A";
-    else if (normalizedDegree.toLowerCase() === "mcom") normalizedDegree = "M.Com";
-    else if (normalizedDegree.toLowerCase() === "mba") normalizedDegree = "MBA";
-    return major ? (normalizedDegree + " " + major).replace(/\s+/g, " ") : normalizedDegree;
-  }
-  return cleaned;
-}
-
-// Clean extracted college field, returning only the institution name
-function cleanCollegeName(line) {
-  if (!line) return "";
-  
-  // 1. Remove tabs, dates/years, grades, percentages
-  var cleaned = line
-    .replace(/\t/g, " ")
-    .replace(/\b\d{4}\s*(?:-|–|to)?\s*\d{4}\b/g, "")
-    .replace(/\b\d{4}\b/g, "")
-    .replace(/\b(?:gpa|cgpa|grade|score|marks?)\s*:\s*\d+(?:\.\d+)?\b/gi, "")
-    .replace(/\b\d+(?:\.\d+)?\s*(?:%|gpa|cgpa)\b/gi, "")
-    .trim();
-  
-  // 2. Remove leading prep words
-  cleaned = cleaned.replace(/^(?:at\s+|from\s+|in\s+)/i, "").trim();
-  
-  // 3. Split by separators
-  var parts = cleaned.split(/[,;\-|—]|\bat\b|\bfrom\b/i);
-  var collegeKeywords = /\b(university|college|institute|school|academy|vidyapeeth|iit|nit|bits|zell|institution|deemed)\b/i;
-  
-  for (var i = 0; i < parts.length; i++) {
-    var p = parts[i].trim();
-    if (collegeKeywords.test(p)) {
-      // Remove any trailing/leading degree prefixes if they are separate words at start/end
-      var cleanPart = p.replace(/\b(B\.?Tech|B\.?E|B\.?Sc|B\.?A|B\.?Com|B\.?B\.?A|M\.?Tech|M\.?E|M\.?Sc|M\.?A|M\.?Com|M\.?B\.?A|Bachelor|Master|Degree)\b/gi, "").trim();
-      var res = cleanPart.replace(/\s+/g, " ");
-      return res.replace(/\s*\([^a-zA-Z0-9]*\)/g, "").trim();
-    }
-  }
-  
-  // Fallback to first part
-  var fallback = parts[0] ? parts[0].trim() : cleaned;
-  var cleanFallback = fallback.replace(/\b(B\.?Tech|B\.?E|B\.?Sc|B\.?A|B\.?Com|B\.?B\.?A|M\.?Tech|M\.?E|M\.?Sc|M\.?A|M\.?Com|M\.?B\.?A|Bachelor|Master|Degree)\b/gi, "").trim();
-  var resFallback = cleanFallback.replace(/\s+/g, " ");
-  return resFallback.replace(/\s*\([^a-zA-Z0-9]*\)/g, "").trim();
-}
-
-// Calculate total experience in months (strictly numeric format string e.g. "12")
-function extractExperienceInMonths(text) {
-  if (!text) return "0";
-  
-  var lines = text.split('\n');
-  var totalMonths = 0;
-  
-  // List of month abbreviations/names
-  var monthsMap = {
-    jan: 0, january: 0,
-    feb: 1, february: 1,
-    mar: 2, march: 2,
-    apr: 3, april: 3,
-    may: 4,
-    jun: 5, june: 5,
-    jul: 6, july: 6,
-    aug: 7, august: 7,
-    sep: 8, september: 8, sept: 8,
-    oct: 9, october: 9,
-    nov: 10, november: 10,
-    dec: 11, december: 11
-  };
-
-  // Excluded keywords
-  var exclusions = /\b(intern|internship|project|academic|student|education|college|university|school|course|training|fresher|learning|freelancer?|hobby)\b/i;
-
-  // Job title indicator keywords
-  var jobIndicators = /\b(engineer|developer|analyst|lead|manager|consultant|specialist|designer|programmer|architect|associate|writer|officer|coordinator|administrator|specialist|head|director)\b/i;
-
-  for (var i = 0; i < lines.length; i++) {
-    var line = lines[i].trim();
-    if (!line) continue;
-
-    // Check if line contains any exclusion keywords
-    if (exclusions.test(line)) {
-      continue;
-    }
-
-    // Must be clearly identifiable employment duration
-    // Must contain a job indicator or be under an "Experience" section
-    var dateRangeRegex = /\b(jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|june?|july?|aug(?:ust)?|sep(?:tember)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?|\d{1,2})\b\s*[-–\/\s\(\)]*\s*\b(\d{4}|\d{2})\b\s*(?:-|–|to)\s*\b(jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|june?|july?|aug(?:ust)?|sep(?:tember)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?|\d{1,2}|present)\b\s*[-–\/\s\(\)]*\s*\b(\d{4}|\d{2})?\b/i;
-    
-    var match = line.match(dateRangeRegex);
-    if (match) {
-      // Validate if it is a job experience line (contains job title indicators)
-      var hasJobIndicator = jobIndicators.test(line);
-      if (!hasJobIndicator) {
-        // If no direct job indicator, check if previous line has one
-        var prevHasJobIndicator = false;
-        if (i > 0) {
-          prevHasJobIndicator = jobIndicators.test(lines[i-1]) && !exclusions.test(lines[i-1]);
-        }
-        if (!prevHasJobIndicator) {
-          continue; // skip if not clearly associated with a job title
-        }
-      }
-
-      var startMonthStr = match[1].toLowerCase();
-      var startYearStr = match[2];
-      var endMonthStr = match[3].toLowerCase();
-      var endYearStr = match[4];
-
-      var startMonth = 0;
-      if (monthsMap[startMonthStr] !== undefined) {
-        startMonth = monthsMap[startMonthStr];
-      } else {
-        var num = parseInt(startMonthStr, 10);
-        if (num >= 1 && num <= 12) startMonth = num - 1;
-      }
-
-      var startYear = parseInt(startYearStr, 10);
-      if (startYearStr.length === 2) {
-        startYear += (startYear > 50 ? 1900 : 2000);
-      }
-
-      var endMonth = 5; // default to June
-      var endYear = 2026; // default to current year
-      var now = new Date();
-      if (endMonthStr === "present") {
-        endMonth = now.getMonth();
-        endYear = now.getFullYear();
-      } else {
-        if (monthsMap[endMonthStr] !== undefined) {
-          endMonth = monthsMap[endMonthStr];
-        } else {
-          var num = parseInt(endMonthStr, 10);
-          if (num >= 1 && num <= 12) endMonth = num - 1;
-        }
-
-        if (endYearStr) {
-          endYear = parseInt(endYearStr, 10);
-          if (endYearStr.length === 2) {
-            endYear += (endYear > 50 ? 1900 : 2000);
-          }
-        } else {
-          // E.g. June 2022 to 2024
-          var possibleYear = parseInt(endMonthStr, 10);
-          if (possibleYear >= 1900 && possibleYear <= 2100) {
-            endYear = possibleYear;
-            endMonth = 0;
-          }
-        }
-      }
-
-      var diffMonths = (endYear - startYear) * 12 + (endMonth - startMonth);
-      if (diffMonths > 0 && diffMonths < 600) {
-        totalMonths += diffMonths;
-      }
-    }
-  }
-
-  return totalMonths.toString();
-}
 
 // Process new resumes under nested role subfolders using Advanced Drive API
-function processNewResumes(sheetId) {
+function processNewResumes(sheetId, groqApiKey) {
+  Logger.log("ENTERED processNewResumes");
+  Logger.log("RESUME_FOLDER_ID = " + (typeof RESUME_FOLDER_ID !== "undefined" ? RESUME_FOLDER_ID : "undefined"));
   Logger.log("[SCAN] processNewResumes() started.");
   
   var hrResumesFolderId;
@@ -1256,6 +1294,8 @@ function processNewResumes(sheetId) {
     Logger.log("[SCAN] Default 'HR Resumes' folder resolved to ID: " + hrResumesFolderId);
   }
 
+  Logger.log("ROOT FOLDER ID: " + hrResumesFolderId);
+
   // Get the exact folder path/metadata if possible
   try {
     var folderMetadata = Drive.Files.get(hrResumesFolderId);
@@ -1264,9 +1304,16 @@ function processNewResumes(sheetId) {
     Logger.log("[ERROR] Failed to fetch root folder metadata: " + e.toString());
   }
 
+  var totalFilesFound = 0;
+  var totalFilesProcessed = 0;
+  var totalCandidatesCreated = 0;
+
   var sources = ["LinkedIn", "Other"];
+  // Scan ALL role folder names. Include both "AI/Data Engineer" and "AI Automation Engineer"
+  // because Drive folders may have been created under either name.
   var roles = [
     "Sustainability",
+    "AI/Data Engineer",
     "AI Automation Engineer",
     "Web Developer",
     "Marketing",
@@ -1279,13 +1326,15 @@ function processNewResumes(sheetId) {
   var masterSheet = ss.getSheetByName("Candidates");
 
   sources.forEach(function(sourceName) {
+    Logger.log("SOURCE FOLDER: " + sourceName);
     Logger.log("[SCAN] Checking source directory: " + sourceName);
     var sourceFolderId = getOrCreateFolder(hrResumesFolderId, sourceName);
     Logger.log("[FOLDER] Source Folder Name: " + sourceName + " | ID: " + sourceFolderId + " | Path: /" + (isConfiguredFolder ? "ConfiguredFolder" : "HR Resumes") + "/" + sourceName);
     
     roles.forEach(function(roleName) {
+      Logger.log("ROLE FOLDER: " + roleName);
       Logger.log("[SCAN] Checking role directory: " + roleName);
-      var roleFolderId = getOrCreateFolder(sourceFolderId, roleName);
+      var roleFolderId = resolveRoleFolderId(sourceFolderId, roleName);
       Logger.log("[FOLDER] Role Folder Name: " + roleName + " | ID: " + roleFolderId + " | Path: /" + (isConfiguredFolder ? "ConfiguredFolder" : "HR Resumes") + "/" + sourceName + "/" + roleName);
       
       // List all files in the role folder using Advanced Drive Service
@@ -1293,6 +1342,11 @@ function processNewResumes(sheetId) {
         q: `'${roleFolderId}' in parents and trashed = false`
       });
       var tempFiles = filesResult.items || [];
+      
+      Logger.log("FILES FOUND: " + tempFiles.length);
+      if (tempFiles.length === 0) {
+        Logger.log("NO FILES FOUND IN ROLE FOLDER");
+      }
       
       Logger.log("[FOLDER] Discovered subfolder contents. Role folder: " + roleName + " (ID: " + roleFolderId + ") contains " + tempFiles.length + " files.");
       
@@ -1313,6 +1367,7 @@ function processNewResumes(sheetId) {
           return;
         }
         
+        totalFilesFound++;
         Logger.log("[SCAN] Processing resume file: " + fileName + " under " + sourceName + "/" + roleName);
         
         try {
@@ -1326,19 +1381,20 @@ function processNewResumes(sheetId) {
           if (extracted && extracted.text) {
             var rawText = extracted.text;
             var links = extracted.links;
-            Logger.log("[SCAN] Text successfully extracted from " + fileName + ". Extract character length: " + rawText.length);
-            var textSnippet = rawText.substring(0, Math.min(200, rawText.length)).replace(/\n/g, " ");
-            Logger.log("[SCAN] Text snippet: " + textSnippet);
-
-            var details = parseCandidateDetails(rawText, links);
+            console.log("RAW PDF TEXT:", rawText);
+            Logger.log("RAW PDF TEXT:\n" + rawText);
+            
+            var details = parseCandidateDetails(rawText, links, groqApiKey);
             details.resumeFileId = fileId;
             details.source = sourceName;
-            details.role = roleName;
+            // Normalize role: "AI Automation Engineer" folder → "AI/Data Engineer" role
+            details.role = (roleName === "AI Automation Engineer") ? "AI/Data Engineer" : roleName;
             details.status = "Submitted";
             details.emailStatus = "Pending";
+            Logger.log("[SCAN] Parsed fields — UG: '" + details.ug + "' | PG: '" + details.pg + "' | College: '" + details.college + "' | Role: '" + details.role + "'");
             
             if (!details.name) {
-              details.name = fileName.replace(/\.[^/.]+$/, "");
+              throw new Error("Candidate name could not be extracted from resume.");
             }
             
             Logger.log("[SCAN] Parsed candidate details: " + JSON.stringify(details));
@@ -1371,6 +1427,7 @@ function processNewResumes(sheetId) {
             // Append candidate and route to sheets
             Logger.log("[SCAN] Creating candidate in sheets...");
             var createRes = handleCreateCandidate(sheetId, details);
+            totalCandidatesCreated++;
             Logger.log("[SCAN] Sheet creation result: " + JSON.stringify(createRes));
             Logger.log("[PROCESSED] Successfully created candidate: Name: " + details.name + " | Email: " + details.email + " | Role: " + details.role);
             
@@ -1382,6 +1439,7 @@ function processNewResumes(sheetId) {
             moveProcessedResume(fileId, sourceName, roleName, hrResumesFolderId);
             Logger.log("[PROCESSED] Moved file " + fileName + " (ID: " + fileId + ") to Processed folder.");
             
+            totalFilesProcessed++;
             processedCount++;
           } else {
             Logger.log("[SKIPPED] File skipped: Name: " + fileName + " | ID: " + fileId + " | Reason: Extracted text is empty or conversion failed.");
@@ -1393,13 +1451,20 @@ function processNewResumes(sheetId) {
     });
   });
   
+  Logger.log(JSON.stringify({
+    totalFilesFound: totalFilesFound,
+    totalFilesProcessed: totalFilesProcessed,
+    totalCandidatesCreated: totalCandidatesCreated
+  }));
+  
   Logger.log("[SCAN] processNewResumes() complete. Total processed: " + processedCount);
   return processedCount;
 }
 
 // REST wrapper entry point mapped to the Web App interface (retains old name for backward compatibility)
-function processIncomingResumes(sheetId) {
-  return processNewResumes(sheetId);
+function processIncomingResumes(sheetId, groqApiKey) {
+  Logger.log("ENTERED processIncomingResumes");
+  return processNewResumes(sheetId, groqApiKey);
 }
 
 function extractLinksFromElement(element, links) {
@@ -1502,1165 +1567,191 @@ function extractTextFromDOCX(fileId) {
   return { text: text, links: links };
 }
 
-function extractCandidateName(lines) {
-  var blacklist = /^(about me|profile|summary|objective|resume|curriculum vitae|personal details|contact information|education|experience|skills|hobbies|languages|projects|unknown candidate|work experience|references|details|email|phone)$/i;
-  
-  function cleanLine(l) {
-    return l.replace(/[\r\n\t]/g, "").trim();
-  }
-
-  // 1. Search first 20 lines with strict capitalization heuristics
-  var searchLimit = Math.min(20, lines.length);
-  for (var i = 0; i < searchLimit; i++) {
-    var line = cleanLine(lines[i]);
-    if (!line) continue;
-    
-    // Check if line length is standard for a name (3 to 35 characters)
-    if (line.length < 3 || line.length > 35) continue;
-    
-    // Must not contain numbers, emails, links, or symbols
-    if (/\d/.test(line)) continue;
-    if (/[@\/\\#_\+\*:]/.test(line)) continue;
-    
-    // Case-insensitive blacklist test on the whole line or parts of it
-    var cleanLower = line.toLowerCase();
-    if (blacklist.test(cleanLower)) continue;
-    if (cleanLower.indexOf("resume") !== -1 || cleanLower.indexOf("cv") !== -1 || cleanLower.indexOf("page") !== -1) continue;
-    
-    // Standard names are capitalized or fully uppercase
-    var words = line.split(/\s+/).filter(Boolean);
-    if (words.length >= 2 && words.length <= 4) {
-      var capitalizedCount = 0;
-      words.forEach(function(w) {
-        if (w[0] && w[0] === w[0].toUpperCase() && /[a-zA-Z]/.test(w[0])) {
-          capitalizedCount++;
-        }
-      });
-      if (capitalizedCount === words.length) {
-        return line;
-      }
-    }
-  }
-
-  // 2. Backup looser loop (ignoring strict capitalization but applying all blacklist/character checks)
-  for (var i = 0; i < searchLimit; i++) {
-    var line = cleanLine(lines[i]);
-    if (!line) continue;
-    if (line.length >= 3 && line.length <= 40 && !/\d/.test(line) && !/[@\/\\#_\+\*:]/.test(line)) {
-      var cleanLower = line.toLowerCase();
-      if (blacklist.test(cleanLower)) continue;
-      var words = line.split(/\s+/).filter(Boolean);
-      if (words.length >= 1 && words.length <= 4) {
-        return line;
-      }
-    }
-  }
-
-  return "Unknown Candidate";
-}
-
-function getHeadingSection(line) {
-  var clean = line.trim().replace(/[:\-\#\=\*]/g, "").trim().toLowerCase();
-  if (!clean) return null;
-  
-  if (/^(education|educational qualification(s)?|qualification(s)?|academic(s)?|academic background|academic profile)$/i.test(clean)) {
-    return "Education";
-  }
-  if (/^(experience|work experience|professional experience|employment history|work history|professional background|internship(s)?)$/i.test(clean)) {
-    return "Experience";
-  }
-  if (/^(project(s)?|academic project(s)?|key project(s)?|personal project(s)?|professional project(s)?)$/i.test(clean)) {
-    return "Projects";
-  }
-  if (/^(skill(s)?|technical skill(s)?|key skill(s)?|core competencies|expertise|tools)$/i.test(clean)) {
-    return "Skills";
-  }
-  if (/^(summary|about me|professional summary|profile|objective|career objective|summary of qualifications)$/i.test(clean)) {
-    return "Summary";
-  }
-  
-  return null;
-}
-
-function parseSections(text) {
-  var sections = {
-    Header: [],
-    Education: [],
-    Experience: [],
-    Projects: [],
-    Skills: [],
-    Summary: []
-  };
-  
-  var currentSection = "Header";
-  var lines = text.split('\n');
-  
-  for (var i = 0; i < lines.length; i++) {
-    var line = lines[i].trim();
-    if (!line) continue;
-    
-    var detectedSection = getHeadingSection(line);
-    if (detectedSection) {
-      currentSection = detectedSection;
-    } else {
-      sections[currentSection].push(lines[i]);
-    }
-  }
-  
-  var sectionTexts = {};
-  for (var key in sections) {
-    sectionTexts[key] = sections[key].join('\n');
-  }
-  return sectionTexts;
-}
-
-function isValidPG(pgStr) {
-  if (!pgStr) return true;
-  if (pgStr.length > 150) return false;
-  
-  // Sentence separator check
-  var sentences = pgStr.split(/[.;]\s+/).filter(Boolean);
-  if (sentences.length > 1) return false;
-  
-  // Experience/Project/Resume block keywords
-  var blacklist = /\b(responsibilities|worked|led|managed|implemented|experience|achievement|developed|built|designed|project|client|team|spearheaded|created|monitored)\b/i;
-  if (blacklist.test(pgStr)) return false;
-  
-  return true;
-}
-
-function isValidUG(ugStr) {
-  if (!ugStr) return true;
-  if (ugStr.length > 150) return false;
-  
-  var blacklist = /\b(responsibilities|worked|led|managed|implemented|experience|achievement|developed|built|designed|project|client|team|spearheaded|created|monitored)\b/i;
-  if (blacklist.test(ugStr)) return false;
-  
-  return true;
-}
-
-function extractDegreeDetails(educationText, isPG) {
-  var ugRegex = /\b(b\.?tech|b\.?e|b\.?sc|b\.?c\.?a|b\.?a|b\.?com|b\.?b\.?a|bachelor)\b/i;
-  var pgRegex = /\b(m\.?tech|m\.?e|m\.?sc|m\.?c\.?a|m\.?a|m\.?com|m\.?b\.?a|master|postgraduate|pg)\b/i;
-  var targetRegex = isPG ? pgRegex : ugRegex;
-  
-  var lines = educationText.split('\n').map(function(l) { return l.trim(); }).filter(Boolean);
-  
-  for (var i = 0; i < lines.length; i++) {
-    var line = lines[i];
-    
-    if (targetRegex.test(line)) {
-      if (!isPG && pgRegex.test(line)) {
-        continue;
-      }
-      
-      var surroundingLines = [];
-      if (i > 0) surroundingLines.push(lines[i-1]);
-      surroundingLines.push(line);
-      if (i < lines.length - 1) surroundingLines.push(lines[i+1]);
-      
-      // 1. Find Year/Range
-      var year = "";
-      var yearRangeRegex = /\b(19\d{2}|20\d{2})\s*[-–\/\s(to)]+\s*(19\d{2}|20\d{2})\b/;
-      var singleYearRegex = /\b(19\d{2}|20\d{2})\b/;
-      
-      for (var k = 0; k < surroundingLines.length; k++) {
-        var mRange = surroundingLines[k].match(yearRangeRegex);
-        if (mRange) {
-          year = mRange[0].replace(/\s+/g, " ");
-          break;
-        }
-      }
-      if (!year) {
-        for (var k = 0; k < surroundingLines.length; k++) {
-          var mSingle = surroundingLines[k].match(singleYearRegex);
-          if (mSingle) {
-            year = mSingle[1];
-            break;
-          }
-        }
-      }
-      
-      // 2. Find College
-      var college = "";
-      var collegeKeywords = /\b(university|college|institute|school|academy|vidyapeeth|iit|nit|bits|zell|institution|deemed)\b/i;
-      
-      for (var k = 0; k < surroundingLines.length; k++) {
-        if (collegeKeywords.test(surroundingLines[k])) {
-          college = cleanCollegeName(surroundingLines[k]);
-          break;
-        }
-      }
-      
-      if (!college) {
-        for (var k = 0; k < surroundingLines.length; k++) {
-          var sl = surroundingLines[k];
-          if (sl !== line && !/\d{4}/.test(sl)) {
-            college = cleanCollegeName(sl);
-            break;
-          }
-        }
-      }
-      
-      if (!college) {
-        college = cleanCollegeName(line);
-      }
-      
-      // 3. Find Degree Name
-      var degree = "";
-      var cleanLine = line.replace(/\b\d{4}\b/g, "").replace(/\b\d{4}\s*[-–\/\s(to)]+\s*\d{4}\b/g, "").trim();
-      if (college && cleanLine.indexOf(college) !== -1) {
-        cleanLine = cleanLine.replace(college, "");
-      }
-      cleanLine = cleanLine.replace(/^[,;\-\s—|]+|[,;\-\s—|]+$/g, "").trim();
-      degree = cleanLine || (isPG ? "Postgraduate" : "Bachelor");
-      
-      if (degree.length > 80) {
-        var degMatch = degree.match(isPG ? pgRegex : ugRegex);
-        if (degMatch) {
-          degree = degMatch[0];
-        }
-      }
-      
-      if (college && degree) {
-        return {
-          college: college,
-          degree: degree,
-          year: year
-        };
-      }
-    }
-  }
-  return null;
-}
-
-function isValidLinkedInProfile(url) {
-  if (!url) return false;
-  var str = url.toLowerCase().trim();
-  
-  // Must contain linkedin.com/in/
-  if (str.indexOf("linkedin.com/in/") === -1) return false;
-  
-  // Ignore company pages, generic pages, search pages, feed, etc.
-  var ignoreKeywords = [
-    "/company/", "/school/", "/jobs/", "/groups/", "/search/", 
-    "/feed/", "/messaging/", "/mynetwork/"
-  ];
-  for (var i = 0; i < ignoreKeywords.length; i++) {
-    if (str.indexOf(ignoreKeywords[i]) !== -1) return false;
-  }
-  
-  // Ensure there is something after /in/ that is not empty
-  var parts = str.split("linkedin.com/in/");
-  if (parts.length >= 2) {
-    var path = parts[1].replace(/^\//, "").split(/[?#]/)[0].trim();
-    if (path.length > 0) return true;
-  }
-  
-  return false;
-}
-
-function normalizeLinkedInUrl(url) {
-  if (!url) return "";
-  var str = url.trim();
-  if (!/^https?:\/\//i.test(str)) {
-    str = "https://" + str;
-  }
-  return str;
-}
-
-function getDegreeClassification(degreeText) {
-  if (!degreeText) return null;
-  var text = degreeText.toUpperCase().replace(/\./g, "").trim();
-  
-  // Strict matching lists
-  // UG list
-  var ugKeywords = ["BTECH", "BE", "BSC", "BCA", "BBA", "BA", "BCOM", "BACHELOR", "UNDERGRADUATE", "UG"];
-  // PG list
-  var pgKeywords = ["MTECH", "MBA", "MSC", "MCA", "PGDM", "MCOM", "ME", "MASTER", "POSTGRADUATE", "PG"];
-  
-  // Split by non-alphabetic characters
-  var words = text.split(/[^A-Z]/).filter(Boolean);
-  
-  // Check PG first because it is higher level
-  var hasPG = words.some(function(w) { return pgKeywords.indexOf(w) !== -1; });
-  var hasUG = words.some(function(w) { return ugKeywords.indexOf(w) !== -1; });
-  
-  if (hasPG) return "PG";
-  if (hasUG) return "UG";
-  return null;
-}
-
-function cleanToOnlyDegree(str, isPG) {
-  if (!str) return "";
-  
-  // Split by dashes, commas, or "at"/"from" to separate college
-  var parts = str.split(/[-–—|]|\bat\b|\bfrom\b/i);
-  
-  var ugKeywords = ["btech", "b.tech", "be", "b.e", "bsc", "b.sc", "bca", "bba", "ba", "bcom", "b.com", "bachelor"];
-  var pgKeywords = ["mtech", "m.tech", "mba", "msc", "m.sc", "mca", "pgdm", "mcom", "m.com", "me", "m.e", "master", "postgraduate", "pg"];
-  var targetKeywords = isPG ? pgKeywords : ugKeywords;
-  
-  // Find a part that contains the degree keyword and does NOT contain college keywords
-  var collegeKeywords = /\b(university|college|institute|school|academy|vidyapeeth|iit|nit|bits|zell|institution|deemed)\b/i;
-  
-  for (var i = 0; i < parts.length; i++) {
-    var p = parts[i].trim();
-    var pLower = p.toLowerCase();
-    
-    // Check if this part contains any target degree keyword
-    var containsDegree = false;
-    for (var k = 0; k < targetKeywords.length; k++) {
-      var kw = targetKeywords[k];
-      // Check as a word
-      var regex = new RegExp("\\b" + kw.replace(/\./g, "\\.?") + "\\b", "i");
-      if (regex.test(pLower)) {
-        containsDegree = true;
-        break;
-      }
-    }
-    
-    if (containsDegree && !collegeKeywords.test(pLower)) {
-      // Clean year values from it
-      var cleaned = p.replace(/\b(19\d{2}|20\d{2})\b/g, "").replace(/\b\d{4}\s*[-–\/\s(to)]+\s*\d{4}\b/g, "").replace(/\s+/g, " ").trim();
-      // Remove any leading/trailing punctuation
-      cleaned = cleaned.replace(/^[,;\-\s—|]+|[,;\-\s—|]+$/g, "").trim();
-      if (cleaned) return cleaned;
-    }
-  }
-  
-  // Fallback: If no part matched perfectly, look inside the entire string and extract the degree phrase
-  var lower = str.toLowerCase();
-  for (var k = 0; k < targetKeywords.length; k++) {
-    var kw = targetKeywords[k];
-    var regex = new RegExp("\\b" + kw.replace(/\./g, "\\.?") + "\\b[^\\n]*", "i");
-    var m = str.match(regex);
-    if (m) {
-      var matchStr = m[0];
-      // Strip college keywords if present in the matched substring
-      var parts2 = matchStr.split(collegeKeywords);
-      var candidatePart = parts2[0].trim();
-      var cleaned = candidatePart.replace(/\b(19\d{2}|20\d{2})\b/g, "").replace(/\b\d{4}\s*[-–\/\s(to)]+\s*\d{4}\b/g, "").trim();
-      cleaned = cleaned.replace(/^[,;\-\s—|]+|[,;\-\s—|]+$/g, "").trim();
-      if (cleaned) return cleaned;
-    }
-  }
-  
-  return "";
-}
-
-function isInvalidLocation(str) {
-  if (!str) return true;
-  var val = str.toLowerCase();
-  
-  var rejectKeywords = [
-    "college", "university", "institute", "engineering", "degree", 
-    "cgpa", "school", "academy", "vidyapeeth", "iit", "nit", "bits", "zell", 
-    "education", "qualification", "experience", "project", "gpa", "marks"
-  ];
-  for (var i = 0; i < rejectKeywords.length; i++) {
-    if (val.indexOf(rejectKeywords[i]) !== -1) return true;
-  }
-  
-  var rejectDegrees = [
-    /\bb\.?e\b/i, /\bb\.?tech\b/i, /\bm\.?tech\b/i, /\bmba\b/i, 
-    /\bb\.?sc\b/i, /\bm\.?sc\b/i, /\bbca\b/i, /\bmca\b/i,
-    /\bpgdm\b/i, /\bbba\b/i, /\bba\b/i, /\bma\b/i, /\bb\.?com\b/i, /\bm\.?com\b/i
-  ];
-  for (var i = 0; i < rejectDegrees.length; i++) {
-    if (rejectDegrees[i].test(val)) return true;
-  }
-  
-  // Year values (4 consecutive digits starting with 19 or 20)
-  if (/\b(19\d{2}|20\d{2})\b/.test(val)) return true;
-  
-  return false;
-}
-
-function isInvalidCollege(str) {
-  var val = str.toLowerCase();
-  
-  // A college name shouldn't just be a city name
-  var cities = ["bangalore", "bengaluru", "mysore", "chennai", "hyderabad", "pune", "mumbai", "delhi"];
-  if (cities.indexOf(val) !== -1) return true;
-  
-  // A college name shouldn't just be a degree abbreviation
-  var degrees = [
-    "b.e", "be", "b.tech", "btech", "m.tech", "mtech", "mba", "m.sc", "msc", "b.sc", "bsc", 
-    "bca", "mca", "pgdm", "bba", "ba", "ma", "b.com", "bcom", "m.com", "mcom"
-  ];
-  if (degrees.indexOf(val) !== -1) return true;
-  
-  return false;
-}
-
-function formatDegreeString(degreeInfo) {
-  if (!degreeInfo) return "";
-  return degreeInfo.degree || "";
-}
-
-function validateAndCleanCandidate(cand) {
-  var clean = {
-    name: "",
-    email: "",
-    phoneNumber: "",
-    ug: "",
-    pg: "",
-    college: "",
-    location: "N/A",
-    linkedin: "",
-    github: "",
-    role: cand.role || "Sustainability",
-    status: cand.status || "Submitted",
-    emailStatus: cand.emailStatus || "Pending",
-    source: cand.source || "Website",
-    joiningDate: cand.joiningDate || "",
-    interviewDate: cand.interviewDate || "",
-    interviewTime: cand.interviewTime || ""
-  };
-
-  // Name validation
-  var nameStr = cand.name ? cand.name.toString().trim() : "";
-  var nameBlacklist = /^(about me|profile|summary|objective|resume|curriculum vitae|personal details|contact information|education|experience|skills|hobbies|languages|projects|unknown candidate|work experience|references|details|email|phone)$/i;
-  if (nameStr && nameStr.length >= 2 && nameStr.length <= 50 && !nameBlacklist.test(nameStr) && !/\d/.test(nameStr)) {
-    clean.name = nameStr;
-  } else {
-    Logger.log("[VALIDATION WARNING] Invalid candidate name: '" + nameStr + "'. Storing blank.");
-  }
-
-  // Email validation
-  var emailStr = cand.email ? cand.email.toString().trim() : "";
-  if (emailStr && emailStr.indexOf("@") !== -1 && emailStr.indexOf(".") !== -1) {
-    clean.email = emailStr;
-  } else {
-    Logger.log("[VALIDATION WARNING] Invalid email: '" + emailStr + "'. Storing blank.");
-  }
-
-  // Phone validation
-  var phoneStr = cand.phoneNumber ? cand.phoneNumber.toString().trim() : "";
-  if (phoneStr && phoneStr.indexOf("#ERROR") === -1) {
-    var digitsCount = phoneStr.replace(/\D/g, "").length;
-    if (digitsCount >= 10 && digitsCount <= 15) {
-      clean.phoneNumber = phoneStr;
-    } else {
-      Logger.log("[VALIDATION WARNING] Invalid phone digit count (" + digitsCount + ") for phone: '" + phoneStr + "'. Storing blank.");
-    }
-  } else {
-    Logger.log("[VALIDATION WARNING] Phone contains error/formula: '" + phoneStr + "'. Storing blank.");
-  }
-
-  // PG and UG values extraction and classification
-  var ugVal = cand.ug ? cand.ug.toString().trim() : "";
-  var pgVal = cand.pg ? cand.pg.toString().trim() : "";
-
-  // Strip college and year if present in ug/pg to ensure column integrity
-  ugVal = cleanToOnlyDegree(ugVal, false);
-  pgVal = cleanToOnlyDegree(pgVal, true);
-
-  var ugClass = getDegreeClassification(ugVal);
-  var pgClass = getDegreeClassification(pgVal);
-
-  // Self-correcting cross-column checks
-  if (pgClass === "UG") {
-    if (!ugVal) {
-      ugVal = pgVal;
-      ugClass = "UG";
-    }
-    pgVal = "";
-    pgClass = null;
-  }
-  if (ugClass === "PG") {
-    if (!pgVal) {
-      pgVal = ugVal;
-      pgClass = "PG";
-    }
-    ugVal = "";
-    ugClass = null;
-  }
-
-  // Final check: UG only contains UG degree info, PG only contains PG degree info
-  if (ugVal && getDegreeClassification(ugVal) !== "UG") {
-    Logger.log("[INTEGRITY WARNING] Rejecting invalid UG value: '" + ugVal + "'. Storing blank.");
-    ugVal = "";
-  }
-  if (pgVal && getDegreeClassification(pgVal) !== "PG") {
-    Logger.log("[INTEGRITY WARNING] Rejecting invalid PG value: '" + pgVal + "'. Storing blank.");
-    pgVal = "";
-  }
-
-  clean.ug = ugVal;
-  clean.pg = pgVal;
-
-  // College validation (Only institution name)
-  var collegeStr = cand.college ? cand.college.toString().trim() : "";
-  if (collegeStr && collegeStr !== "N/A" && collegeStr.length >= 5 && /[a-zA-Z]/.test(collegeStr) && !isInvalidCollege(collegeStr)) {
-    clean.college = collegeStr;
-  } else {
-    Logger.log("[VALIDATION WARNING] Invalid college name: '" + collegeStr + "'. Storing blank.");
-    clean.college = "";
-  }
-
-  // Location validation (City only)
-  var locStr = cand.location ? cand.location.toString().trim() : "";
-  if (locStr && locStr !== "N/A" && locStr.length <= 40 && !isInvalidLocation(locStr)) {
-    // If it contains a known city name, extract just the city name
-    var matchedCity = "";
-    var cities = ["Bangalore", "Bengaluru", "Mysore", "Chennai", "Hyderabad", "Pune", "Mumbai", "Delhi", "Kolkata", "Noida", "Gurgaon"];
-    for (var c = 0; c < cities.length; c++) {
-      var cityRegex = new RegExp("\\b" + cities[c] + "\\b", "i");
-      if (cityRegex.test(locStr)) {
-        matchedCity = cities[c];
-        break;
-      }
-    }
-    clean.location = matchedCity ? matchedCity : locStr;
-  } else {
-    Logger.log("[VALIDATION WARNING] Invalid location name: '" + locStr + "'. Storing N/A.");
-    clean.location = "N/A";
-  }
-
-  // Other fields formatting
-  clean.ug = formatSheetValue(clean.ug);
-  clean.pg = formatSheetValue(clean.pg);
-  clean.college = formatSheetValue(clean.college);
-  clean.phoneNumber = formatSheetValue(clean.phoneNumber);
-  clean.name = formatSheetValue(clean.name);
-  clean.email = formatSheetValue(clean.email);
-  clean.location = formatSheetValue(clean.location);
-  clean.linkedin = formatSheetValue(cand.linkedin || "");
-  clean.github = formatSheetValue(cand.github || "");
-
-  return clean;
-}
-
-function extractAndNormalizePhone(text) {
-  var regex = /(?:\+?\d{1,3}[-.\s]?)?\(?\d{3,5}\)?[-.\s]?\d{3}[-.\s]?\d{4,5}/g;
-  var matches = text.match(regex);
-  if (!matches) return "";
-  
-  for (var i = 0; i < matches.length; i++) {
-    var raw = matches[i].trim();
-    var digits = raw.replace(/[^\d+]/g, "");
-    
-    if (digits.length < 10 || digits.length > 15) continue;
-    
-    if (digits.startsWith("+91") && digits.length === 13) {
-      return "+91 " + digits.substring(3, 8) + " " + digits.substring(8);
-    }
-    if (digits.startsWith("91") && digits.length === 12) {
-      return "+91 " + digits.substring(2, 7) + " " + digits.substring(7);
-    }
-    if (digits.startsWith("0") && digits.length === 11) {
-      return "+91 " + digits.substring(1, 6) + " " + digits.substring(6);
-    }
-    if (digits.length === 10) {
-      return "+91 " + digits.substring(0, 5) + " " + digits.substring(5);
-    }
-    
-    if (digits.startsWith("+")) {
-      return digits;
-    }
-  }
-  
-  return matches[0].replace(/[()]/g, "").trim();
-}
-
-function extractGraduationYear(text, ugLine, pgLine, collegeLine) {
-  var explicitMatch = text.match(/\b(?:graduation|passing|passed|class\s+of)\s*(?::|in)?\s*\b(19\d{2}|20\d{2})\b/i);
-  if (explicitMatch) {
-    return explicitMatch[1];
-  }
-  
-  var yearRegex = /\b(19\d{2}|20\d{2})\b/g;
-  var years = [];
-  
-  var searchLines = [ugLine, pgLine, collegeLine].filter(Boolean);
-  searchLines.forEach(function(line) {
-    var matches = line.match(yearRegex);
-    if (matches) {
-      matches.forEach(function(y) {
-        years.push(parseInt(y, 10));
-      });
-    }
-  });
-  
-  if (years.length > 0) {
-    return Math.max.apply(null, years).toString();
-  }
-  
-  var lines = text.split('\n');
-  for (var i = 0; i < lines.length; i++) {
-    var line = lines[i].toLowerCase();
-    if (line.indexOf("education") !== -1 || line.indexOf("academic") !== -1 || line.indexOf("degree") !== -1 || line.indexOf("bachelor") !== -1 || line.indexOf("master") !== -1) {
-      for (var j = i; j <= Math.min(i + 2, lines.length - 1); j++) {
-        var m = lines[j].match(/\b(19\d{2}|20\d{2})\b/);
-        if (m) {
-          return m[1];
-        }
-      }
-    }
-  }
-  return "";
-}
-
-function extractGraduationYearOrRange(text, ugLine, pgLine, collegeLine) {
-  var rangeRegex = /\b(19\d{2}|20\d{2})\s*[-–\/\s(to)]+\s*(19\d{2}|20\d{2})\b/;
-  
-  var searchLines = [ugLine, pgLine, collegeLine].filter(Boolean);
-  for (var i = 0; i < searchLines.length; i++) {
-    var rangeMatch = searchLines[i].match(rangeRegex);
-    if (rangeMatch) {
-      return rangeMatch[0].replace(/\s+/g, " ");
-    }
-  }
-  
-  var lines = text.split('\n');
-  for (var i = 0; i < lines.length; i++) {
-    var line = lines[i].toLowerCase();
-    if (line.indexOf("education") !== -1 || line.indexOf("academic") !== -1 || line.indexOf("degree") !== -1 || line.indexOf("bachelor") !== -1 || line.indexOf("master") !== -1 || line.indexOf("passing") !== -1 || line.indexOf("graduation") !== -1) {
-      for (var j = i; j <= Math.min(i + 3, lines.length - 1); j++) {
-        var m = lines[j].match(rangeRegex);
-        if (m) {
-          return m[0].replace(/\s+/g, " ");
-        }
-      }
-    }
-  }
-  
-  return extractGraduationYear(text, ugLine, pgLine, collegeLine) || "";
-}
-
-function cleanLineToDegree(line, isPG) {
-  var ugKeywords = ["btech", "b.tech", "be", "b.e", "bsc", "b.sc", "bca", "bba", "ba", "bcom", "b.com", "bachelor", "undergraduate", "ug"];
-  var pgKeywords = ["mtech", "m.tech", "mba", "msc", "m.sc", "mca", "pgdm", "mcom", "m.com", "me", "m.e", "master", "postgraduate", "pg"];
-  var targetKeywords = isPG ? pgKeywords : ugKeywords;
-  
-  var parts = line.split(/[-–—|]|\bat\b|\bfrom\b/i);
-  var collegeKeywords = /\b(university|college|institute|school|academy|vidyapeeth|iit|nit|bits|zell|institution|deemed)\b/i;
-  
-  for (var i = 0; i < parts.length; i++) {
-    var p = parts[i].trim();
-    var pLower = p.toLowerCase();
-    
-    var containsDegree = false;
-    for (var k = 0; k < targetKeywords.length; k++) {
-      var kw = targetKeywords[k];
-      var regex = new RegExp("\\b" + kw.replace(/\./g, "\\.?") + "\\b", "i");
-      if (regex.test(pLower)) {
-        containsDegree = true;
-        break;
-      }
-    }
-    
-    if (containsDegree && !collegeKeywords.test(pLower)) {
-      // Clean years and GPA
-      var cleaned = p.replace(/\b(19\d{2}|20\d{2})\b/g, "")
-                     .replace(/\b\d{4}\s*[-–\/\s(to)]+\s*\d{4}\b/g, "")
-                     .replace(/\b(?:gpa|cgpa|grade|score|marks?)\s*:\s*\d+(?:\.\d+)?\b/gi, "")
-                     .replace(/\b\d+(?:\.\d+)?\s*(?:%|gpa|cgpa)\b/gi, "")
-                     .replace(/\s+/g, " ")
-                     .trim();
-      cleaned = cleaned.replace(/^[,;\-\s—|]+|[,;\-\s—|]+$/g, "").trim();
-      if (cleaned) return cleaned;
-    }
-  }
-  
-  // Fallback: search within the whole line but strip college
-  var pLower = line.toLowerCase();
-  var containsDegree = false;
-  for (var k = 0; k < targetKeywords.length; k++) {
-    var kw = targetKeywords[k];
-    var regex = new RegExp("\\b" + kw.replace(/\./g, "\\.?") + "\\b", "i");
-    if (regex.test(pLower)) {
-      containsDegree = true;
-      break;
-    }
-  }
-  if (containsDegree) {
-    var parts2 = line.split(collegeKeywords);
-    for (var i = 0; i < parts2.length; i++) {
-      var pt = parts2[i].trim();
-      if (!pt) continue;
-      
-      var containsDegree2 = false;
-      for (var k = 0; k < targetKeywords.length; k++) {
-        var kw = targetKeywords[k];
-        var regex = new RegExp("\\b" + kw.replace(/\./g, "\\.?") + "\\b", "i");
-        if (regex.test(pt.toLowerCase())) {
-          containsDegree2 = true;
-          break;
-        }
-      }
-      if (containsDegree2) {
-        var cleaned = pt.replace(/\b(19\d{2}|20\d{2})\b/g, "")
-                        .replace(/\b\d{4}\s*[-–\/\s(to)]+\s*\d{4}\b/g, "")
-                        .replace(/\b(?:gpa|cgpa|grade|score|marks?)\s*:\s*\d+(?:\.\d+)?\b/gi, "")
-                        .replace(/\b\d+(?:\.\d+)?\s*(?:%|gpa|cgpa)\b/gi, "")
-                        .replace(/\s+/g, " ")
-                        .trim();
-        cleaned = cleaned.replace(/^[,;\-\s—|]+|[,;\-\s—|]+$/g, "").trim();
-        if (cleaned) return cleaned;
-      }
-    }
-  }
-  return "";
-}
-
-function stripInformationalSections(text) {
-  var lines = text.split('\n');
-  var infoHeaders = [
-    /^\s*about\s+me\s*$/i,
-    /^\s*summary\s*$/i,
-    /^\s*professional\s+summary\s*$/i,
-    /^\s*objective\s*$/i,
-    /^\s*profile\s*$/i,
-    /^\s*contact\s*$/i,
-    /^\s*contact\s+information\s*$/i,
-    /^\s*personal\s+details\s*$/i
-  ];
-  
-  var sectionHeaders = [
-    /^\s*education\s*$/i,
-    /^\s*academic\s+background\s*$/i,
-    /^\s*educational\s+qualifications\s*$/i,
-    /^\s*qualifications\s*$/i,
-    /^\s*work\s+experience\s*$/i,
-    /^\s*experience\s*$/i,
-    /^\s*projects\s*$/i,
-    /^\s*skills\s*$/i,
-    /^\s*certifications\s*$/i
-  ];
-  
-  var outputLines = [];
-  var skipping = false;
-  
-  for (var i = 0; i < lines.length; i++) {
-    var lineClean = lines[i].trim();
-    if (!lineClean) {
-      if (!skipping) outputLines.push(lines[i]);
-      continue;
-    }
-    
-    var isInfo = false;
-    for (var h = 0; h < infoHeaders.length; h++) {
-      if (infoHeaders[h].test(lineClean)) {
-        isInfo = true;
-        break;
-      }
-    }
-    
-    if (isInfo) {
-      skipping = true;
-      continue;
-    }
-    
-    var isSection = false;
-    for (var s = 0; s < sectionHeaders.length; s++) {
-      if (sectionHeaders[s].test(lineClean)) {
-        isSection = true;
-        break;
-      }
-    }
-    
-    if (isSection) {
-      skipping = false;
-    }
-    
-    if (!skipping) {
-      outputLines.push(lines[i]);
-    }
-  }
-  
-  return outputLines.join('\n');
-}
-
-function getEducationSection(text) {
-  var lines = text.split('\n');
-  var startIdx = -1;
-  var endIdx = -1;
-  
-  var eduHeaders = [
-    /^\s*education\s*$/i,
-    /^\s*academic\s+background\s*$/i,
-    /^\s*educational\s+qualifications\s*$/i,
-    /^\s*qualifications\s*$/i
-  ];
-  
-  var nextSectionHeaders = [
-    /^\s*work\s+experience\s*$/i,
-    /^\s*experience\s*$/i,
-    /^\s*projects\s*$/i,
-    /^\s*skills\s*$/i,
-    /^\s*certifications\s*$/i,
-    /^\s*about\s+me\s*$/i,
-    /^\s*summary\s*$/i,
-    /^\s*professional\s+summary\s*$/i,
-    /^\s*objective\s*$/i,
-    /^\s*profile\s*$/i
-  ];
-
-  for (var i = 0; i < lines.length; i++) {
-    var lineClean = lines[i].trim();
-    if (!lineClean) continue;
-    
-    var isEduHeader = false;
-    for (var h = 0; h < eduHeaders.length; h++) {
-      if (eduHeaders[h].test(lineClean)) {
-        isEduHeader = true;
-        break;
-      }
-    }
-    
-    if (isEduHeader) {
-      startIdx = i;
-      break;
-    }
-  }
-  
-  if (startIdx === -1) {
-    var eduHeadersLoose = [
-      /\beducation\b/i,
-      /\bacacademic\s+background\b/i,
-      /\beducational\s+qualifications\b/i,
-      /\bqualifications\b/i
-    ];
-    for (var i = 0; i < lines.length; i++) {
-      var lineClean = lines[i].trim();
-      var isEduHeader = false;
-      for (var h = 0; h < eduHeadersLoose.length; h++) {
-        if (eduHeadersLoose[h].test(lineClean)) {
-          isEduHeader = true;
-          break;
-        }
-      }
-      if (isEduHeader) {
-        startIdx = i;
-        break;
-      }
-    }
-  }
-  
-  if (startIdx === -1) {
-    return "";
-  }
-  
-  for (var i = startIdx + 1; i < lines.length; i++) {
-    var lineClean = lines[i].trim();
-    if (!lineClean) continue;
-    
-    var isNextHeader = false;
-    for (var n = 0; n < nextSectionHeaders.length; n++) {
-      if (nextSectionHeaders[n].test(lineClean)) {
-        isNextHeader = true;
-        break;
-      }
-    }
-    
-    if (isNextHeader) {
-      endIdx = i;
-      break;
-    }
-  }
-  
-  var eduLines = [];
-  var endLimit = (endIdx !== -1) ? endIdx : lines.length;
-  for (var i = startIdx + 1; i < endLimit; i++) {
-    eduLines.push(lines[i]);
-  }
-  
-  return eduLines.join('\n').trim();
-}
-
-function isPGDegree(degree) {
-  var pgRegex = /\b(m\.?tech|m\.?e|m\.?sc|m\.?c\.?a|m\.?a|m\.?com|m\.?b\.?a|master|postgraduate|pgdm|pg)\b/i;
-  return pgRegex.test(degree);
-}
-
-function isUGDegree(degree) {
-  var ugRegex = /\b(b\.?tech|b\.?e|b\.?sc|b\.?c\.?a|b\.?a|b\.?com|b\.?b\.?a|bachelor|undergraduate|ug)\b/i;
-  return ugRegex.test(degree);
-}
-
-function parseEducationRecords(eduText) {
-  if (!eduText) return [];
-  
-  var lines = eduText.split('\n').map(function(l) { return l.trim(); }).filter(Boolean);
-  var records = [];
-  
-  var ignoreKeywords = /\b(diploma|polytechnic|puc|12th|10th|sslc|higher\s+secondary|hsc|ssc|secondary\s+school|high\s+school|matriculation)\b/i;
-  var bachelorRegex = /\b(b\.?tech|b\.?e|b\.?sc|b\.?c\.?a|b\.?a|b\.?com|b\.?b\.?a|bachelor|bachelor\s+of\s+engineering|bachelor\s+of\s+technology)\b/i;
-  var pgRegex = /\b(m\.?tech|m\.?e|m\.?sc|m\.?c\.?a|m\.?a|m\.?com|m\.?b\.?a|master|postgraduate|pgdm|pg|postgraduate\s+program|master\s+of\s+engineering|master\s+of\s+technology)\b/i;
-  
-  var collegeKeywords = /\b(university|college|institute|school|academy|vidyapeeth|iit|nit|bits|zell|institution|deemed|center|centre|medical|technological)\b/i;
-  var yearRangeRegex = /\b(19\d{2}|20\d{2})\s*[-–\/\s(to)]+\s*(19\d{2}|20\d{2})\b/;
-  var singleYearRegex = /\b(19\d{2}|20\d{2})\b/;
-
-  var matchedYearLines = {};
-  var matchedCollegeLines = {};
-
-  for (var i = 0; i < lines.length; i++) {
-    var line = lines[i];
-    
-    if (ignoreKeywords.test(line)) {
-      continue;
-    }
-    
-    var isPG = pgRegex.test(line);
-    var isUG = bachelorRegex.test(line);
-    
-    if (isPG || isUG) {
-      var cleanedDegree = cleanLineToDegree(line, isPG);
-      if (!cleanedDegree) {
-        cleanedDegree = line.replace(/\b(19\d{2}|20\d{2})\b/g, "")
-                            .replace(/\b\d{4}\s*[-–\/\s(to)]+\s*\d{4}\b/g, "")
-                            .replace(/\s+/g, " ")
-                            .trim();
-        cleanedDegree = cleanedDegree.replace(/^[,;\-\s—|]+|[,;\-\s—|]+$/g, "").trim();
-      }
-      
-      if (cleanedDegree && !ignoreKeywords.test(cleanedDegree)) {
-        var collegeVal = "";
-        var yearVal = "";
-        
-        var minWindow = Math.max(0, i - 1);
-        var maxWindow = Math.min(lines.length - 1, i + 2);
-        
-        for (var j = minWindow; j <= maxWindow; j++) {
-          var ln = lines[j];
-          if (collegeKeywords.test(ln) && !ignoreKeywords.test(ln) && !matchedCollegeLines[j] && j !== i) {
-            collegeVal = cleanCollegeName(ln);
-            if (collegeVal && collegeVal.length >= 5) {
-              matchedCollegeLines[j] = true;
-              break;
-            }
-          }
-        }
-        
-        var mRange = line.match(yearRangeRegex);
-        if (mRange) {
-          yearVal = mRange[0].replace(/\s+/g, " ");
-        } else {
-          var mSingle = line.match(singleYearRegex);
-          if (mSingle) {
-            yearVal = mSingle[1];
-          }
-        }
-        
-        if (!yearVal) {
-          for (var j = minWindow; j <= maxWindow; j++) {
-            var ln = lines[j];
-            if (matchedYearLines[j]) continue;
-            
-            var mRangeNext = ln.match(yearRangeRegex);
-            if (mRangeNext) {
-              yearVal = mRangeNext[0].replace(/\s+/g, " ");
-              matchedYearLines[j] = true;
-              break;
-            }
-          }
-        }
-        if (!yearVal) {
-          for (var j = minWindow; j <= maxWindow; j++) {
-            var ln = lines[j];
-            if (matchedYearLines[j]) continue;
-            
-            var mSingleNext = ln.match(singleYearRegex);
-            if (mSingleNext) {
-              yearVal = mSingleNext[1];
-              matchedYearLines[j] = true;
-              break;
-            }
-          }
-        }
-        
-        records.push({
-          degree: cleanedDegree,
-          college: collegeVal,
-          year: yearVal,
-          type: isPG ? "PG" : "UG"
-        });
-      }
-    }
-  }
-  
-  return records;
-}
-
-
-function extractLocation(text) {
-  var cities = [
-    "Bangalore", "Bengaluru", "Mysore", "Chennai", "Hyderabad", 
-    "Pune", "Mumbai", "Delhi", "Kolkata", "Noida", "Gurgaon"
-  ];
-  
-  for (var c = 0; c < cities.length; c++) {
-    var cityRegex = new RegExp("\\b" + cities[c] + "\\b", "i");
-    if (cityRegex.test(text)) {
-      return cities[c];
-    }
-  }
-  
-  var lines = text.split('\n').map(function (line) { return line.trim(); }).filter(Boolean);
-  for (var k = 0; k < lines.length; k++) {
-    var ln = lines[k];
-    var lnLower = ln.toLowerCase();
-    if (lnLower.indexOf("location:") !== -1 || lnLower.indexOf("address:") !== -1 || lnLower.indexOf("live in") !== -1) {
-      var candidateLoc = ln.replace(/location:/i, "").replace(/address:/i, "").replace(/live\s+in/i, "").trim();
-      if (!isInvalidLocation(candidateLoc)) {
-        return candidateLoc;
-      }
-    }
-  }
-  
-  var locMatch = text.match(/location\s*:\s*([^\n]+)/i);
-  if (locMatch) {
-    var candidateLoc = locMatch[1].trim();
-    if (!isInvalidLocation(candidateLoc)) {
-      return candidateLoc;
-    }
-  }
-  
-  return "N/A";
-}
-
-function extractLinkedIn(text, links) {
+// LLM-based resume extraction using Groq API
+function parseCandidateDetails(text, links, groqApiKey) {
   links = links || [];
   
-  for (var i = 0; i < links.length; i++) {
-    var url = links[i].url;
-    if (isValidLinkedInProfile(url)) {
-      return normalizeLinkedInUrl(url);
-    }
+  var apiKey = groqApiKey || PropertiesService.getScriptProperties().getProperty("GROQ_API_KEY");
+  if (!apiKey) {
+    throw new Error("GROQ_API_KEY is not configured (neither passed in request nor set in script properties).");
   }
-  
-  var linkedinRegex = /linkedin\.com\/in\/[a-zA-Z0-9_\-\/\.\?\=\&]+/i;
-  var linkedinMatch = text.match(linkedinRegex);
-  if (linkedinMatch && isValidLinkedInProfile(linkedinMatch[0])) {
-    return normalizeLinkedInUrl(linkedinMatch[0]);
-  }
-  
-  return "";
-}
 
-function extractGitHub(text, links) {
-  links = links || [];
-  
-  for (var i = 0; i < links.length; i++) {
-    var url = links[i].url;
-    if (url && url.toLowerCase().indexOf("github.com/") !== -1) {
-      var str = url.trim();
-      if (!/^https?:\/\//i.test(str)) {
-        str = "https://" + str;
+  var linksText = "";
+  if (links.length > 0) {
+    linksText = "\n\nHyperlinks Extracted from Document Structure:\n" + 
+      links.map(function(l) { return "- Link Text: \"" + l.text + "\", URL: \"" + l.url + "\""; }).join("\n");
+  }
+
+  var systemInstruction = "You are a precise resume parser. Your job is to extract candidate details from the full resume text and return ONLY valid JSON matching the exact requested schema.";
+
+  var userPrompt = "Requirements:\n\n" +
+    "1. Extract candidate details from the full resume text.\n" +
+    "2. Return ONLY valid JSON.\n" +
+    "3. Do not return explanations, markdown, or extra text.\n" +
+    "4. If a field is missing, return an empty string.\n" +
+    "5. Never guess information.\n" +
+    "6. Ignore certifications, courses, workshops, PUC, 12th, 10th, diploma, training programs, bootcamps, and professional summaries when extracting UG/PG information.\n\n" +
+    "Extraction Rules:\n\n" +
+    "NAME:\n" +
+    "* Extract the candidate's actual name.\n" +
+    "* Do not use section headings such as:\n" +
+    "  PROFESSIONAL EXPERIENCE\n" +
+    "  PROFILE\n" +
+    "  SUMMARY\n" +
+    "  RESUME\n" +
+    "  CURRICULUM VITAE\n" +
+    "  EDUCATION\n" +
+    "* Name should contain alphabetic words only.\n\n" +
+    "UG:\n" +
+    "* Extract only the undergraduate degree.\n" +
+    "* Examples:\n" +
+    "  B.E\n" +
+    "  B.Tech\n" +
+    "  B.Sc\n" +
+    "  BCA\n" +
+    "  B.Com\n" +
+    "  BA\n" +
+    "  BBA\n" +
+    "* Do not include college name.\n" +
+    "* Do not include dates.\n\n" +
+    "PG:\n" +
+    "* Extract only postgraduate degree.\n" +
+    "* Examples:\n" +
+    "  M.Tech\n" +
+    "  MBA\n" +
+    "  MCA\n" +
+    "  M.Sc\n" +
+    "  MS\n" +
+    "  MA\n" +
+    "* Do not include college name.\n" +
+    "* Do not include dates.\n" +
+    "* Ignore certifications and executive programs.\n\n" +
+    "COLLEGE:\n" +
+    "* Extract the primary college/university associated with the highest qualification.\n" +
+    "* Examples:\n" +
+    "  Dayananda Sagar University\n" +
+    "  MS Ramaiah Institute of Technology\n" +
+    "  BMS College of Engineering\n" +
+    "* Do not include dates.\n" +
+    "* Do not include degree names.\n\n" +
+    "LOCATION:\n" +
+    "* Extract candidate location only.\n" +
+    "* Examples:\n" +
+    "  Bangalore\n" +
+    "  Bengaluru\n" +
+    "  Hyderabad\n" +
+    "  Chennai\n" +
+    "* Do not extract college location.\n\n" +
+    "LINKEDIN:\n" +
+    "* Extract complete LinkedIn URL.\n" +
+    "* If hyperlink exists but text is hidden, extract actual URL if available.\n\n" +
+    "GITHUB:\n" +
+    "* Extract complete GitHub URL.\n" +
+    "\n" +
+    "EMAIL:\n" +
+    "* Extract primary email.\n" +
+    "\n" +
+    "PHONE:\n" +
+    "* Extract primary phone number.\n" +
+    "\n" +
+    "Return JSON in EXACT format:\n\n" +
+    "{\n" +
+    "\"name\": \"\",\n" +
+    "\"email\": \"\",\n" +
+    "\"phone\": \"\",\n" +
+    "\"ug\": \"\",\n" +
+    "\"pg\": \"\",\n" +
+    "\"college\": \"\",\n" +
+    "\"location\": \"\",\n" +
+    "\"linkedin\": \"\",\n" +
+    "\"github\": \"\"\n" +
+    "}\n\n" +
+    "Resume Text:\n" + text + linksText;
+
+  var models = ["llama-3.3-70b-versatile", "llama-3.1-8b-instant", "llama3-70b-8192", "mixtral-8x7b-32768"];
+  var success = false;
+  var responseText = "";
+  var responseCode = 0;
+
+  for (var m = 0; m < models.length; m++) {
+    var modelName = models[m];
+    try {
+      var url = "https://api.groq.com/openai/v1/chat/completions";
+      var payload = {
+        "model": modelName,
+        "messages": [
+          { "role": "system", "content": systemInstruction },
+          { "role": "user", "content": userPrompt }
+        ],
+        "temperature": 0.1,
+        "response_format": { "type": "json_object" }
+      };
+
+      var options = {
+        "method": "post",
+        "contentType": "application/json",
+        "headers": {
+          "Authorization": "Bearer " + apiKey
+        },
+        "payload": JSON.stringify(payload),
+        "muteHttpExceptions": true
+      };
+
+      Logger.log("GROQ REQUEST SENT");
+      
+      var response = UrlFetchApp.fetch(url, options);
+      responseCode = response.getResponseCode();
+      responseText = response.getContentText();
+      Logger.log("raw groq response: " + responseText);
+      
+      if (responseCode === 200) {
+        Logger.log("GROQ RESPONSE RECEIVED");
+        success = true;
+        break;
+      } else {
+        Logger.log("[GROQ] Model " + modelName + " failed with code " + responseCode + ": " + responseText);
       }
-      return str;
+    } catch (innerErr) {
+      Logger.log("[GROQ] Fetch failed for model " + modelName + ": " + innerErr.toString());
     }
   }
+
+  if (!success) {
+    throw new Error("All Groq models failed or timed out. Last response status was " + responseCode + ": " + responseText);
+  }
+
+  Logger.log("RAW GROQ RESPONSE: " + responseText);
   
-  var githubRegex = /github\.com\/[a-zA-Z0-9_-]+/i;
-  var githubMatch = text.match(githubRegex);
-  if (githubMatch) {
-    return "https://" + githubMatch[0];
+  var json = JSON.parse(responseText);
+  var content = json.choices[0].message.content;
+  
+  var jsonText = content.trim();
+  if (jsonText.indexOf("```") === 0) {
+    jsonText = jsonText.replace(/^```(?:json)?\n?|```$/g, "").trim();
   }
   
-  return "";
-}
-
-// Regular expressions and scores mapping to parse resume details
-function parseCandidateDetails(text, links) {
-  links = links || [];
+  var parsed = JSON.parse(jsonText);
+  Logger.log("PARSED JSON:");
+  Logger.log(JSON.stringify(parsed));
+  Logger.log("parsedCandidate.phone = " + JSON.stringify(parsed.phone));
+  Logger.log("parsedCandidate.phone: " + parsed.phone);
+  
+  var rawPhone = parsed.phone;
+  var phoneStr = (rawPhone !== null && rawPhone !== undefined) ? String(rawPhone).trim() : "";
+  Logger.log("phoneStr after String() conversion = " + JSON.stringify(phoneStr));
+  
   var details = {
-    name: "",
-    email: "",
-    phoneNumber: "",
-    location: "N/A",
-    college: "",
-    ug: "",
-    pg: "",
-    linkedin: "",
-    github: "",
-    role: "Sustainability" // default fallback
+    name: (parsed.name || "").trim(),
+    email: (parsed.email || "").trim(),
+    phoneNumber: phoneStr,
+    location: (parsed.location || "N/A").trim(),
+    college: (parsed.college || "").trim(),
+    ug: (parsed.ug || "").trim(),
+    pg: (parsed.pg || "").trim(),
+    linkedin: (parsed.linkedin || "").trim(),
+    github: (parsed.github || "").trim()
   };
-
-  var lines = text.split('\n').map(function (line) { return line.trim(); }).filter(Boolean);
-
-  // 1. Name extraction
-  details.name = extractCandidateName(lines);
-
-  // 2. Email regex
-  var emailRegex = /[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/;
-  var emailMatch = text.match(emailRegex);
-  if (emailMatch) {
-    details.email = emailMatch[0].trim();
-  }
-
-  // 3. Phone extraction & normalization
-  details.phoneNumber = extractAndNormalizePhone(text);
-
-  // 4. Location extraction
-  details.location = extractLocation(text);
-
-  // 5. LinkedIn and GitHub extractions
-  details.linkedin = extractLinkedIn(text, links);
-  details.github = extractGitHub(text, links);
-
-  // 6. Education parsing (Using double-layered sectioning and structured entries)
-  var cleanedText = stripInformationalSections(text);
-  var eduText = getEducationSection(cleanedText);
-  if (!eduText) {
-    eduText = cleanedText;
-  }
   
-  var eduRecords = parseEducationRecords(eduText);
-  
-  var selectedUG = "";
-  var selectedPG = "";
-  var selectedCollege = "";
-  var selectedCollegeYear = "";
-  
-  var ugEntry = null;
-  var pgEntry = null;
-  
-  for (var i = 0; i < eduRecords.length; i++) {
-    var rec = eduRecords[i];
-    if (rec.type === "UG" && !ugEntry) {
-      ugEntry = rec;
-    }
-    if (rec.type === "PG" && !pgEntry) {
-      pgEntry = rec;
-    }
-  }
-  
-  if (ugEntry) {
-    selectedUG = ugEntry.degree;
-  }
-  if (pgEntry) {
-    selectedPG = pgEntry.degree;
-  }
-  
-  var highestEntry = pgEntry || ugEntry;
-  if (highestEntry) {
-    selectedCollege = highestEntry.college;
-    selectedCollegeYear = highestEntry.year;
-    
-    // Fallback to other entry's college if highest entry's college is blank
-    if (!selectedCollege) {
-      var otherEntry = (highestEntry === pgEntry) ? ugEntry : pgEntry;
-      if (otherEntry && otherEntry.college) {
-        selectedCollege = otherEntry.college;
-        selectedCollegeYear = otherEntry.year;
-      }
-    }
-  }
-  
-  var collegeField = selectedCollege;
-  if (selectedCollege && selectedCollegeYear) {
-    collegeField = selectedCollege + " (" + selectedCollegeYear + ")";
-  }
-  
-  details.ug = selectedUG;
-  details.pg = selectedPG;
-  details.college = collegeField;
-
   return details;
 }
 
@@ -3213,7 +2304,7 @@ function findCandidateInDeptSheet(deptSheet, email) {
  * Select this function in the Apps Script editor toolbar and click "Run".
  * After running, this function can be safely deleted or ignored.
  */
-function runExistingDataRepair() {
+function runExistingDataRepair(groqApiKey) {
   var ss;
   try {
     ss = SpreadsheetApp.getActiveSpreadsheet();
@@ -3238,17 +2329,19 @@ function runExistingDataRepair() {
   }
   
   const masterData = masterSheet.getDataRange().getValues();
-  const masterHeaders = masterData[0];
+  const masterHeaders = masterData[0].map(function(h) { return h.toString().trim().toLowerCase(); });
   
-  var nameIdx = masterHeaders.indexOf("Candidate Name");
-  var emailIdx = masterHeaders.indexOf("Email Address");
-  var roleIdx = masterHeaders.indexOf("Role Applied For");
-  var joiningIdx = masterHeaders.indexOf("Joining Date");
-  var statusIdx = masterHeaders.indexOf("Status");
-  var emailStatusIdx = masterHeaders.indexOf("Email Status");
-  var sourceIdx = masterHeaders.indexOf("Source");
-  var intDateIdx = masterHeaders.indexOf("Interview Date");
-  var intTimeIdx = masterHeaders.indexOf("Interview Time");
+  var nameIdx = masterHeaders.indexOf("candidate name");
+  var emailIdx = masterHeaders.indexOf("email address");
+  if (emailIdx === -1) emailIdx = masterHeaders.indexOf("email");
+  var roleIdx = masterHeaders.indexOf("role applied for");
+  if (roleIdx === -1) roleIdx = masterHeaders.indexOf("role");
+  var joiningIdx = masterHeaders.indexOf("joining date");
+  var statusIdx = masterHeaders.indexOf("status");
+  var emailStatusIdx = masterHeaders.indexOf("email status");
+  var sourceIdx = masterHeaders.indexOf("source");
+  var intDateIdx = masterHeaders.indexOf("interview date");
+  var intTimeIdx = masterHeaders.indexOf("interview time");
   
   if (nameIdx === -1) nameIdx = 0;
   if (emailIdx === -1) emailIdx = 1;
@@ -3294,13 +2387,15 @@ function runExistingDataRepair() {
     
     // Read the headers BEFORE overwriting/cleaning columns, to determine original field indices
     var deptHeaders = deptSheet ? deptSheet.getDataRange().getValues()[0] : [];
-    var dPhoneIdx = deptHeaders.indexOf("Phone Number");
-    var dUgIdx = deptHeaders.indexOf("UG");
-    var dPgIdx = deptHeaders.indexOf("PG");
-    var dCollegeIdx = deptHeaders.indexOf("College");
-    var dLocIdx = deptHeaders.indexOf("Location");
-    var dLinkIdx = deptHeaders.indexOf("LinkedIn");
-    var dGitIdx = deptHeaders.indexOf("GitHub");
+    var deptHeadersLower = deptHeaders.map(function(h) { return h.toString().trim().toLowerCase(); });
+    var dPhoneIdx = deptHeadersLower.indexOf("phone number");
+    if (dPhoneIdx === -1) dPhoneIdx = deptHeadersLower.indexOf("phone");
+    var dUgIdx = deptHeadersLower.indexOf("ug");
+    var dPgIdx = deptHeadersLower.indexOf("pg");
+    var dCollegeIdx = deptHeadersLower.indexOf("college");
+    var dLocIdx = deptHeadersLower.indexOf("location");
+    var dLinkIdx = deptHeadersLower.indexOf("linkedin");
+    var dGitIdx = deptHeadersLower.indexOf("github");
 
     // Ensure department sheet columns are cleaned of extra columns and formatted
     if (deptSheet) {
@@ -3355,7 +2450,10 @@ function runExistingDataRepair() {
           extracted = extractTextFromDOCX(fileId);
         }
         if (extracted && extracted.text) {
-          parsedDetails = parseCandidateDetails(extracted.text, extracted.links);
+          console.log("RAW PDF TEXT:", extracted.text);
+          Logger.log("RAW PDF TEXT:\n" + extracted.text);
+          
+          parsedDetails = parseCandidateDetails(extracted.text, extracted.links, groqApiKey);
           Logger.log("Re-parsed resume successfully for email: " + email + ", name: " + parsedDetails.name);
         }
       } catch (err) {
@@ -3363,17 +2461,16 @@ function runExistingDataRepair() {
       }
     }
 
-    // Build candidate object for validation
-    var candObj = {
-      name: (parsedDetails && parsedDetails.name) ? parsedDetails.name : cName,
+    var clean = {
+      name: (parsedDetails && parsedDetails.name) ? parsedDetails.name.toString().trim() : cName,
       email: email,
-      phoneNumber: (parsedDetails && parsedDetails.phoneNumber) ? parsedDetails.phoneNumber : (deptRowInfo && dPhoneIdx !== -1 ? deptRowInfo.rowValues[dPhoneIdx] : ""),
-      ug: (parsedDetails && parsedDetails.ug) ? parsedDetails.ug : (deptRowInfo && dUgIdx !== -1 ? deptRowInfo.rowValues[dUgIdx] : ""),
-      pg: (parsedDetails && parsedDetails.pg) ? parsedDetails.pg : (deptRowInfo && dPgIdx !== -1 ? deptRowInfo.rowValues[dPgIdx] : ""),
-      college: (parsedDetails && parsedDetails.college) ? parsedDetails.college : (deptRowInfo && dCollegeIdx !== -1 ? deptRowInfo.rowValues[dCollegeIdx] : ""),
-      location: (parsedDetails && parsedDetails.location) ? parsedDetails.location : (deptRowInfo && dLocIdx !== -1 ? deptRowInfo.rowValues[dLocIdx] : "N/A"),
-      linkedin: (parsedDetails && parsedDetails.linkedin) ? parsedDetails.linkedin : (deptRowInfo && dLinkIdx !== -1 ? deptRowInfo.rowValues[dLinkIdx] : ""),
-      github: (parsedDetails && parsedDetails.github) ? parsedDetails.github : (deptRowInfo && dGitIdx !== -1 ? deptRowInfo.rowValues[dGitIdx] : ""),
+      phoneNumber: (parsedDetails && parsedDetails.phoneNumber) ? parsedDetails.phoneNumber.toString().trim() : (deptRowInfo && dPhoneIdx !== -1 ? deptRowInfo.rowValues[dPhoneIdx].toString().trim() : ""),
+      ug: (parsedDetails && parsedDetails.ug) ? parsedDetails.ug.toString().trim() : (deptRowInfo && dUgIdx !== -1 ? deptRowInfo.rowValues[dUgIdx].toString().trim() : ""),
+      pg: (parsedDetails && parsedDetails.pg) ? parsedDetails.pg.toString().trim() : (deptRowInfo && dPgIdx !== -1 ? deptRowInfo.rowValues[dPgIdx].toString().trim() : ""),
+      college: (parsedDetails && parsedDetails.college) ? parsedDetails.college.toString().trim() : (deptRowInfo && dCollegeIdx !== -1 ? deptRowInfo.rowValues[dCollegeIdx].toString().trim() : ""),
+      location: (parsedDetails && parsedDetails.location) ? parsedDetails.location.toString().trim() : (deptRowInfo && dLocIdx !== -1 ? deptRowInfo.rowValues[dLocIdx].toString().trim() : "N/A"),
+      linkedin: (parsedDetails && parsedDetails.linkedin) ? parsedDetails.linkedin.toString().trim() : (deptRowInfo && dLinkIdx !== -1 ? deptRowInfo.rowValues[dLinkIdx].toString().trim() : ""),
+      github: (parsedDetails && parsedDetails.github) ? parsedDetails.github.toString().trim() : (deptRowInfo && dGitIdx !== -1 ? deptRowInfo.rowValues[dGitIdx].toString().trim() : ""),
       role: role,
       status: status,
       emailStatus: emailStatus,
@@ -3383,7 +2480,17 @@ function runExistingDataRepair() {
       interviewTime: interviewTime
     };
 
-    var clean = validateAndCleanCandidate(candObj);
+    var rowData = {
+      name: clean.name,
+      email: clean.email,
+      phone: clean.phoneNumber,
+      ug: clean.ug,
+      pg: clean.pg,
+      college: clean.college,
+      location: clean.location
+    };
+    console.log("SHEET ROW DATA:", rowData);
+    Logger.log("SHEET ROW DATA:\n" + JSON.stringify(rowData, null, 2));
 
     // Update Candidates Master sheet row
     masterSheet.getRange(i + 1, nameIdx + 1).setValue(clean.name);
@@ -3399,11 +2506,24 @@ function runExistingDataRepair() {
     // Update Department sheet row
     if (deptSheet) {
       var deptRowIndex = deptRowInfo ? deptRowInfo.rowIndex : -1;
+      var phone = clean.phoneNumber;
+      var phoneStr = String(phone || '');
+      var repairPhoneToWrite = "";
+      var phoneStrLower = phoneStr.toLowerCase().trim();
+      if (phoneStrLower && 
+          phoneStrLower !== "undefined" && 
+          phoneStrLower !== "null" && 
+          phoneStrLower !== "object" && 
+          phoneStrLower.indexOf("object") === -1 && 
+          phoneStrLower.indexOf("#error") === -1) {
+        repairPhoneToWrite = formatSheetValue(phoneStr);
+      }
+      Logger.log("phoneToWrite: " + repairPhoneToWrite);
       if (deptRowIndex === -1) {
         deptSheet.appendRow([
           clean.name,
           clean.email,
-          clean.phoneNumber,
+          repairPhoneToWrite,
           clean.ug,
           clean.pg,
           clean.college,
@@ -3415,7 +2535,7 @@ function runExistingDataRepair() {
       } else {
         deptSheet.getRange(deptRowIndex, 1).setValue(clean.name);
         deptSheet.getRange(deptRowIndex, 2).setValue(clean.email);
-        deptSheet.getRange(deptRowIndex, 3).setValue(clean.phoneNumber);
+        deptSheet.getRange(deptRowIndex, 3).setValue(repairPhoneToWrite);
         deptSheet.getRange(deptRowIndex, 4).setValue(clean.ug);
         deptSheet.getRange(deptRowIndex, 5).setValue(clean.pg);
         deptSheet.getRange(deptRowIndex, 6).setValue(clean.college);
@@ -3423,6 +2543,23 @@ function runExistingDataRepair() {
         deptSheet.getRange(deptRowIndex, 8).setValue(clean.linkedin);
         deptSheet.getRange(deptRowIndex, 9).setValue(clean.github);
         deptSheet.getRange(deptRowIndex, 10).setValue(formatSheetValue(clean.status));
+      }
+    }
+  }
+
+  // Restore validation dropdown rules
+  for (var k = 2; k <= masterSheet.getLastRow(); k++) {
+    applyStatusDropdown(masterSheet, k, statusIdx + 1);
+  }
+  
+  var allSheets = ss.getSheets();
+  var SKIP_SHEETS = ["Candidates", "ProcessedResumes", "ProcessedResumesLog"];
+  for (var s = 0; s < allSheets.length; s++) {
+    var dSheet = allSheets[s];
+    var dName = dSheet.getName();
+    if (SKIP_SHEETS.indexOf(dName) === -1) {
+      for (var r = 2; r <= dSheet.getLastRow(); r++) {
+        applyStatusDropdown(dSheet, r, 10);
       }
     }
   }
@@ -3522,10 +2659,10 @@ function verifyExtractionAccuracy() {
     var collegeIsValid = collegeStr && collegeStr.length >= 5 && /[a-zA-Z]/.test(collegeStr);
     
     var ugStr = details.ug;
-    var ugIsValid = !ugStr || isValidUG(ugStr);
+    var ugIsValid = !ugStr || (ugStr.length <= 150 && !/\b(responsibilities|worked|led|managed|implemented|experience|achievement|developed|built|designed|project|client|team|spearheaded|created|monitored)\b/i.test(ugStr));
     
     var pgStr = details.pg;
-    var pgIsValid = !pgStr || isValidPG(pgStr);
+    var pgIsValid = !pgStr || (pgStr.length <= 150 && !/\b(responsibilities|worked|led|managed|implemented|experience|achievement|developed|built|designed|project|client|team|spearheaded|created|monitored)\b/i.test(pgStr));
     
     if (collegeIsValid && ugIsValid && pgIsValid) {
       validEducations++;
@@ -3554,4 +2691,15 @@ function verifyExtractionAccuracy() {
 
 function runDataMigration() {
   runExistingDataRepair();
+}
+
+// Helper to manually force/trigger OAuth permissions prompt for external HTTP requests
+function triggerAuthorization() {
+  Logger.log("Triggering explicit external request to force OAuth prompt...");
+  try {
+    var response = UrlFetchApp.fetch("https://api.groq.com", { muteHttpExceptions: true });
+    Logger.log("Fetch succeeded! Status code: " + response.getResponseCode());
+  } catch (e) {
+    Logger.log("Fetch failed: " + e.toString());
+  }
 }

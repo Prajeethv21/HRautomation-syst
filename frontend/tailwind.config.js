@@ -8,20 +8,21 @@ export default {
     extend: {
       colors: {
         brand: {
-          light: '#E8F5E9',       // Premium soft green bg
-          DEFAULT: '#2E7D32',     // Professional medium green
-          primary: '#1B4332',     // Rich deep forest green
-          secondary: '#40916C',   // Elegant secondary green
-          accent: '#81C784',      // Soft accent green
-          text: '#1C2E24',        // Rich dark text
-          bg: '#FAFDFB',          // Clean canvas bg
-          border: '#E3ECE6'       // Subtle border
+          light: '#F4F9EC',       // Soft yellow-green bg tint
+          DEFAULT: '#8CC63F',     // Vibrant yellow-green logo color
+          primary: '#111111',     // Rich black
+          secondary: '#333333',   // Charcoal grey
+          accent: '#A6D763',      // Soft yellow-green accent
+          text: '#111111',        // Rich dark charcoal text
+          bg: '#FFFFFF',          // Clean white canvas bg
+          border: '#E5E7EB'       // Subtle light gray border
         }
       },
       fontFamily: {
         sans: ['Inter', 'Plus Jakarta Sans', 'sans-serif'],
         jakarta: ['Plus Jakarta Sans', 'sans-serif'],
-        inter: ['Inter', 'sans-serif']
+        inter: ['Inter', 'sans-serif'],
+        poppins: ['Plus Jakarta Sans', 'Inter', 'sans-serif']
       }
     },
   },

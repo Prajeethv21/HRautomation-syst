@@ -102,26 +102,42 @@ export async function ingestCandidate(candidateData, source = 'Other') {
   const processedCandidate = await handler.process(candidateData);
   
   const { url, sheetId } = getCredentials();
+  const groqApiKey = process.env.GROQ_API_KEY || '';
   
   const payload = {
     action: 'createCandidate',
     sheetId: sheetId,
-    candidate: processedCandidate
+    candidate: processedCandidate,
+    groqApiKey: groqApiKey
   };
 
   try {
+    console.log('[BACKEND] Ingesting candidate:', processedCandidate.name, '| Source:', source);
     const response = await axios.post(url, payload, {
       headers: { 'Content-Type': 'application/json' },
       timeout: 20000
     });
     
+    console.log('Apps Script create response status:', response.status);
+    console.log('Apps Script create response body:', JSON.stringify(response.data));
+
     if (response.data && response.data.success) {
+      if (response.data.logs) {
+        console.log("=== Apps Script Logs during Ingestion ===\n" + response.data.logs + "\n========================================");
+      }
       return { success: true, message: response.data.message };
+    }
+
+    if (response.data && response.data.logs) {
+      console.log("=== Apps Script Logs during Failed Ingestion ===\n" + response.data.logs + "\n========================================");
     }
     
     throw new Error(response.data?.message || 'Apps Script returned failure status');
   } catch (error) {
     console.error('Candidate Ingestion Error:', error.message);
+    if (error.response && error.response.data) {
+      console.error('Error response data:', JSON.stringify(error.response.data));
+    }
     throw new Error(`Failed to ingest candidate: ${error.message}`);
   }
 }

@@ -20,11 +20,11 @@ const Button: React.FC<ButtonProps> = ({
   const baseStyles = 'inline-flex items-center justify-center gap-2 rounded-lg font-medium transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-offset-2 disabled:opacity-50 disabled:pointer-events-none active:scale-[0.98]';
   
   const variants = {
-    primary: 'bg-brand text-white hover:bg-brand-dark focus:ring-brand shadow-sm border border-brand/10',
-    secondary: 'bg-brand-light/25 text-brand hover:bg-brand-light/35 focus:ring-brand border border-brand-light/20',
-    outline: 'bg-white border border-brand-border text-gray-700 hover:bg-brand-bg focus:ring-brand',
+    primary: 'bg-brand text-black font-bold hover:bg-[#7cb434] focus:ring-brand shadow-sm border border-brand/10',
+    secondary: 'bg-brand-light text-[#1B4332] font-semibold hover:bg-brand/20 focus:ring-brand border border-brand-light/20',
+    outline: 'bg-white border border-brand-border text-gray-700 hover:bg-brand-light focus:ring-brand',
     danger: 'bg-red-500 text-white hover:bg-red-600 focus:ring-red-500 shadow-sm',
-    ghost: 'text-gray-600 hover:bg-brand-bg hover:text-brand-text focus:ring-brand'
+    ghost: 'text-gray-600 hover:bg-brand-light hover:text-brand-text focus:ring-brand'
   };
 
   const sizes = {

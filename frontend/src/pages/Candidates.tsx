@@ -17,17 +17,17 @@ const getStatusBadgeClass = (status: string) => {
     case 'Submitted':
       return 'bg-gray-50 text-gray-700 border-gray-100';
     case 'Shortlisted':
-      return 'bg-sky-50 text-sky-700 border-sky-100';
+      return 'bg-[#F4F9EC] text-[#2D6A2D] border-[#8CC63F]/20';
     case 'Scheduled':
-      return 'bg-purple-50 text-purple-700 border-purple-100';
+      return 'bg-[#FEF9E7] text-[#B7950B] border-[#F9E79F]';
     case 'Interviewing':
-      return 'bg-sky-50 text-sky-700 border-sky-100';
+      return 'bg-[#F4F9EC] text-[#1B4332] border-[#8CC63F]/20';
     case 'Selected':
       return 'bg-[#EDF9E8] text-[#2D6A2D] border-[#D7F1C8]';
     case 'Rejected':
       return 'bg-[#FFF5F5] text-[#C92A2A] border-[#FFC9C9]';
     case 'On Hold':
-      return 'bg-[#FFFBEB] text-[#92400E] border-[#FDE68A]';
+      return 'bg-[#FEF9E7] text-[#B7950B] border-[#F9E79F]';
     default:
       return 'bg-[#F4F7F5] text-gray-500 border-[#E3ECE6]';
   }
@@ -36,15 +36,15 @@ const getStatusBadgeClass = (status: string) => {
 const getSourceBadgeClass = (source?: string) => {
   switch (source) {
     case 'LinkedIn':
-      return 'bg-sky-50 text-sky-700 border-sky-100';
+      return 'bg-gray-100 text-gray-800 border-gray-200';
     case 'Career Page':
-      return 'bg-teal-50 text-teal-700 border-teal-100';
+      return 'bg-[#EDF9E8] text-[#2D6A2D] border-[#D7F1C8]';
     case 'Referral':
-      return 'bg-purple-50 text-purple-700 border-purple-100';
+      return 'bg-[#FEF9E7] text-[#B7950B] border-[#F9E79F]';
     case 'Website':
-      return 'bg-blue-50 text-blue-700 border-blue-100';
+      return 'bg-gray-100 text-gray-800 border-gray-200';
     case 'Manual Entry':
-      return 'bg-orange-50 text-orange-700 border-orange-100';
+      return 'bg-gray-100 text-gray-800 border-gray-200';
     default:
       return 'bg-gray-50 text-gray-600 border-gray-100';
   }
@@ -459,7 +459,7 @@ const Candidates: React.FC = () => {
           isLoading={isSendingInterview}
           onClick={() => handleSendInterviewEmail(candidate.email, candidate.candidateName)}
           icon={<Send className="w-3.5 h-3.5" />}
-          className="active:scale-[0.95] bg-purple-600 hover:bg-purple-700 border-purple-600 hover:border-purple-700"
+          className="active:scale-[0.95]"
         >
           Send Interview
         </Button>
@@ -494,25 +494,25 @@ const Candidates: React.FC = () => {
   return (
     <div className="space-y-6 animate-fade-in">
       {/* Top action/filters bar */}
-      <div className="bg-white border border-brand-border p-5 rounded-3xl shadow-sm flex flex-col md:flex-row items-center justify-between gap-4 overflow-visible">
+      <div className="bg-white border border-[#E5E7EB] px-6 py-6 rounded-3xl shadow-sm flex flex-col lg:flex-row lg:items-center justify-between gap-5 overflow-visible">
         {/* Search Input */}
-        <div className="relative w-full md:w-80">
+        <div className="relative w-full lg:w-80 shrink-0">
           <Search className="w-4 h-4 text-gray-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
           <input
             type="text"
             placeholder="Search by name, email, or role..."
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            className="w-full text-sm pl-10 pr-4 py-2.5 bg-[#EDF9E8]/15 border border-brand-border rounded-2xl focus:border-[#6FAF45]/40 text-brand-text placeholder-gray-400 font-medium"
+            className="w-full h-10 text-sm pl-10 pr-4 bg-[#EDF9E8]/15 border border-[#E5E7EB] rounded-2xl focus:border-[#6FAF45]/40 text-brand-text placeholder-gray-400 font-medium"
           />
         </div>
 
         {/* Filters & Export Toolbar */}
-        <div className="flex flex-wrap items-center gap-3 w-full md:w-auto justify-end">
+        <div className="flex flex-wrap items-center gap-3.5 w-full lg:w-auto justify-start lg:justify-end">
           <button
             onClick={handleScanResumes}
             disabled={processingResumes}
-            className="inline-flex items-center gap-2 px-4 py-2.5 text-xs font-bold rounded-2xl border border-brand-border bg-white text-gray-600 hover:bg-[#EDF9E8]/40 hover:text-brand transition-all active:scale-[0.98] disabled:opacity-50"
+            className="inline-flex items-center justify-center gap-2 px-4 h-10 text-xs font-bold rounded-2xl border border-[#E5E7EB] bg-white text-gray-600 hover:bg-[#EDF9E8]/40 hover:text-brand transition-all active:scale-[0.98] disabled:opacity-50"
           >
             {processingResumes ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <FileText className="w-3.5 h-3.5" />}
             Scan Resumes
@@ -529,7 +529,7 @@ const Candidates: React.FC = () => {
                   setTempSourceFilter(sourceFilter);
                 }
               }}
-              className={`flex items-center gap-2.5 px-4.5 py-2.5 border rounded-2xl text-sm font-semibold transition-all duration-200 select-none active:scale-[0.98] ${
+              className={`flex items-center justify-center gap-2.5 px-4 h-10 border rounded-2xl text-sm font-semibold transition-all duration-200 select-none active:scale-[0.98] ${
                 isFilterOpen || statusFilter || emailStatusFilter || sourceFilter
                   ? 'bg-[#EDF9E8] border-[#A8D672]/50 text-[#1B4332] shadow-sm font-bold'
                   : 'bg-white border-brand-border text-gray-600 hover:bg-[#EDF9E8]/35'
@@ -561,10 +561,10 @@ const Candidates: React.FC = () => {
                       {[
                         { label: 'All Statuses', value: '', dot: null },
                         { label: 'Submitted', value: 'Submitted', dot: 'bg-gray-400' },
-                        { label: 'Shortlisted', value: 'Shortlisted', dot: 'bg-sky-400' },
-                        { label: 'Scheduled', value: 'Scheduled', dot: 'bg-purple-400' },
-                        { label: 'Interviewing', value: 'Interviewing', dot: 'bg-sky-400' },
-                        { label: 'On Hold', value: 'On Hold', dot: 'bg-[#D97706]' },
+                        { label: 'Shortlisted', value: 'Shortlisted', dot: 'bg-[#8CC63F]' },
+                        { label: 'Scheduled', value: 'Scheduled', dot: 'bg-[#E6B93B]' },
+                        { label: 'Interviewing', value: 'Interviewing', dot: 'bg-[#6FAF45]' },
+                        { label: 'On Hold', value: 'On Hold', dot: 'bg-[#E6B93B]' },
                         { label: 'Selected', value: 'Selected', dot: 'bg-[#6FAF45]' },
                         { label: 'Rejected', value: 'Rejected', dot: 'bg-[#C92A2A]' },
                       ].map((s) => (
@@ -684,7 +684,7 @@ const Candidates: React.FC = () => {
           <button
             onClick={() => fetchCandidatesData(true)}
             disabled={refreshing}
-            className="p-2.5 border border-brand-border rounded-2xl bg-white hover:bg-[#EDF9E8]/40 text-gray-500 hover:text-[#6FAF45] transition-all shrink-0 disabled:opacity-40 active:scale-[0.95] flex items-center justify-center"
+            className="w-10 h-10 flex items-center justify-center border border-[#E5E7EB] rounded-2xl bg-white hover:bg-[#EDF9E8]/40 text-gray-500 hover:text-[#6FAF45] transition-all shrink-0 disabled:opacity-40 active:scale-[0.95]"
             title="Refresh candidate data"
           >
             <RefreshCw className={`w-4 h-4 ${refreshing ? 'animate-spin' : ''}`} />
@@ -694,46 +694,48 @@ const Candidates: React.FC = () => {
 
       {/* Bulk action selection bar */}
       {selectedEmails.size > 0 && (
-        <div className="bg-white border border-brand-border p-5 rounded-3xl shadow-sm flex flex-wrap items-center gap-3 justify-end animate-fade-in">
-          <span className="text-xs font-bold text-gray-500 mr-auto select-none">
+        <div className="bg-white border border-[#E5E7EB] px-6 py-5 rounded-3xl shadow-sm flex flex-col sm:flex-row items-center justify-between gap-4 animate-fade-in">
+          <span className="text-xs font-bold text-gray-500 select-none">
             {selectedEmails.size} candidates selected on page
           </span>
 
-          <button
-            onClick={handleBulkSendRejections}
-            className="inline-flex items-center gap-2 px-4 py-2.5 text-xs font-bold rounded-2xl border border-red-200 bg-red-50 text-red-700 hover:bg-red-100 transition-all active:scale-[0.98]"
-            disabled={bulkProcessing}
-          >
-            <XCircle className="w-3.5 h-3.5" />
-            Send Rejections
-          </button>
+          <div className="flex flex-wrap items-center gap-3 w-full sm:w-auto justify-end">
+            <button
+              onClick={handleBulkSendRejections}
+              className="inline-flex items-center justify-center gap-2 px-5 min-w-[140px] h-10 text-xs font-bold rounded-2xl border border-red-200 bg-red-50 text-red-700 hover:bg-red-100 transition-all active:scale-[0.98]"
+              disabled={bulkProcessing}
+            >
+              <XCircle className="w-3.5 h-3.5" />
+              Send Rejections
+            </button>
 
-          <button
-            onClick={handleBulkSendLetters}
-            className="inline-flex items-center gap-2 px-4.5 py-2.5 text-xs font-bold rounded-2xl border border-[#6FAF45] bg-[#6FAF45] text-white hover:bg-[#5f953a] transition-all active:scale-[0.98]"
-            disabled={bulkProcessing}
-          >
-            <Send className="w-3.5 h-3.5" />
-            Send Letters
-          </button>
+            <button
+              onClick={handleBulkSendLetters}
+              className="inline-flex items-center justify-center gap-2 px-5 min-w-[140px] h-10 text-xs font-bold rounded-2xl border border-[#6FAF45] bg-[#6FAF45] text-white hover:bg-[#5f953a] transition-all active:scale-[0.98]"
+              disabled={bulkProcessing}
+            >
+              <Send className="w-3.5 h-3.5" />
+              Send Letters
+            </button>
 
-          <select
-            value={bulkStatusValue}
-            onChange={(e) => {
-              const val = e.target.value;
-              if (val) {
-                handleBulkStatusUpdate(val);
-              }
-              setBulkStatusValue("");
-            }}
-            className="text-xs font-bold py-2.5 pl-3.5 pr-8 rounded-2xl border border-brand-border bg-white text-gray-600 hover:bg-brand-light focus:outline-none focus:ring-2 focus:ring-[#6FAF45]/50 transition-colors cursor-pointer appearance-none bg-[url('data:image/svg+xml;charset=utf-8,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2020%2020%22%20fill%3D%22none%22%3E%3Cpath%20d%3D%22M7%209l3%203%203-3%22%20stroke%3D%22%234B5563%22%20stroke-width%3D%221.5%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%2F%3E%3C%2Fsvg%3E')] bg-[right_8px_center] bg-no-repeat bg-[length:14px_14px]"
-            disabled={bulkProcessing}
-          >
-            <option value="" disabled hidden>Bulk Status Update...</option>
-            {['Selected', 'Interviewing', 'On Hold', 'Rejected'].map(s => (
-              <option key={s} value={s}>{s}</option>
-            ))}
-          </select>
+            <select
+              value={bulkStatusValue}
+              onChange={(e) => {
+                const val = e.target.value;
+                if (val) {
+                  handleBulkStatusUpdate(val);
+                }
+                setBulkStatusValue("");
+              }}
+              className="text-xs font-bold py-2.5 pl-3.5 pr-8 rounded-2xl border border-brand-border bg-white text-gray-600 hover:bg-brand-light focus:outline-none focus:ring-2 focus:ring-[#6FAF45]/50 transition-colors cursor-pointer appearance-none bg-[url('data:image/svg+xml;charset=utf-8,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2020%2020%22%20fill%3D%22none%22%3E%3Cpath%20d%3D%22M7%209l3%203%203-3%22%20stroke%3D%22%234B5563%22%20stroke-width%3D%221.5%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%2F%3E%3C%2Fsvg%3E')] bg-[right_8px_center] bg-no-repeat bg-[length:14px_14px]"
+              disabled={bulkProcessing}
+            >
+              <option value="" disabled hidden>Bulk Status Update...</option>
+              {['Selected', 'Interviewing', 'On Hold', 'Rejected'].map(s => (
+                <option key={s} value={s}>{s}</option>
+              ))}
+            </select>
+          </div>
         </div>
       )}
 
@@ -802,7 +804,7 @@ const Candidates: React.FC = () => {
             <table className="w-full text-left border-collapse">
               <thead>
                 <tr className="bg-brand-bg/40 border-b border-brand-border">
-                  <th className="px-6 py-4.5 w-10">
+                  <th className="pl-8 pr-4 py-4 w-10 text-left">
                     <input
                       type="checkbox"
                       onChange={handleSelectAll}
@@ -810,20 +812,20 @@ const Candidates: React.FC = () => {
                       className="rounded border-gray-300 text-[#6FAF45] focus:ring-[#6FAF45] w-4 h-4 cursor-pointer"
                     />
                   </th>
-                  <th className="px-6 py-4.5 text-left">{renderSortHeader('Candidate Name', 'candidateName')}</th>
-                  <th className="px-6 py-4.5 text-xs font-bold text-gray-500 uppercase tracking-wider font-jakarta">Email</th>
-                  <th className="px-6 py-4.5 text-xs font-bold text-gray-500 uppercase tracking-wider font-jakarta">Role</th>
-                  <th className="px-6 py-4.5 text-left">{renderSortHeader('Joining Date', 'joiningDate')}</th>
-                  <th className="px-6 py-4.5 text-left">{renderSortHeader('Status', 'status')}</th>
-                  <th className="px-6 py-4.5 text-left">{renderSortHeader('Source', 'source')}</th>
-                  <th className="px-6 py-4.5 text-xs font-bold text-gray-500 uppercase tracking-wider font-jakarta">Email Status</th>
-                  <th className="px-6 py-4.5 text-xs font-bold text-gray-500 uppercase tracking-wider text-right font-jakarta">Actions</th>
+                  <th className="pl-6 pr-4 py-4 text-left">{renderSortHeader('Candidate Name', 'candidateName')}</th>
+                  <th className="px-4 py-4 text-xs font-bold text-gray-500 uppercase tracking-wider font-jakarta text-left">Email</th>
+                  <th className="px-4 py-4 text-xs font-bold text-gray-500 uppercase tracking-wider font-jakarta text-left">Role</th>
+                  <th className="px-4 py-4 text-left">{renderSortHeader('Joining Date', 'joiningDate')}</th>
+                  <th className="px-4 py-4 text-left">{renderSortHeader('Status', 'status')}</th>
+                  <th className="px-4 py-4 text-left">{renderSortHeader('Source', 'source')}</th>
+                  <th className="px-4 py-4 text-xs font-bold text-gray-500 uppercase tracking-wider font-jakarta text-left">Email Status</th>
+                  <th className="pl-4 pr-8 py-4 text-xs font-bold text-gray-500 uppercase tracking-wider text-right font-jakarta">Actions</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-brand-border">
                 {paginatedCandidates.map((candidate, idx) => (
                   <tr key={`${candidate.email}-${candidate.joiningDate}-${idx}`} className="hover:bg-brand-light/20 hover:translate-x-0.5 transition-all duration-200">
-                    <td className="px-6 py-4 whitespace-nowrap">
+                    <td className="pl-8 pr-4 py-4 whitespace-nowrap">
                       <input
                         type="checkbox"
                         checked={selectedEmails.has(candidate.email)}
@@ -831,17 +833,17 @@ const Candidates: React.FC = () => {
                         className="rounded border-gray-300 text-[#6FAF45] focus:ring-[#6FAF45] w-4 h-4 cursor-pointer"
                       />
                     </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm font-bold text-brand-text font-jakarta">{candidate.candidateName}</td>
-                    <td className="px-6 py-4 whitespace-nowrap text-xs text-gray-500">{candidate.email}</td>
-                    <td className="px-6 py-4 whitespace-nowrap text-xs font-semibold text-gray-600">{candidate.role}</td>
-                    <td className="px-6 py-4 whitespace-nowrap text-xs text-gray-500">
+                    <td className="pl-6 pr-4 py-4 whitespace-nowrap text-sm font-bold text-brand-text font-jakarta">{candidate.candidateName}</td>
+                    <td className="px-4 py-4 whitespace-nowrap text-xs text-gray-500">{candidate.email}</td>
+                    <td className="px-4 py-4 whitespace-nowrap text-xs font-semibold text-gray-600">{candidate.role}</td>
+                    <td className="px-4 py-4 whitespace-nowrap text-xs text-gray-500">
                       {candidate.joiningDate ? new Date(candidate.joiningDate).toLocaleDateString('en-US', {
                         year: 'numeric',
                         month: 'short',
                         day: 'numeric'
                       }) : 'N/A'}
                     </td>
-                    <td className="px-6 py-4 whitespace-nowrap">
+                    <td className="px-4 py-4 whitespace-nowrap">
                       <select
                         value={SHEET_STATUS_OPTIONS.includes(candidate.status as any) ? candidate.status : "Interviewing"}
                         onChange={e => {
@@ -877,18 +879,18 @@ const Candidates: React.FC = () => {
                       </select>
                     </td>
 
-                    <td className="px-6 py-4 whitespace-nowrap">
+                    <td className="px-4 py-4 whitespace-nowrap">
                       <span className={`text-[10px] font-extrabold px-2.5 py-0.5 rounded-full uppercase border ${getSourceBadgeClass(candidate.source || 'Website')}`}>
                         {candidate.source || 'Website'}
                       </span>
                     </td>
 
-                    <td className="px-6 py-4 whitespace-nowrap">
+                    <td className="px-4 py-4 whitespace-nowrap">
                       <span className={`text-[10px] font-extrabold px-2.5 py-0.5 rounded-full uppercase border ${
                         candidate.emailStatus && candidate.emailStatus.toLowerCase().includes('sent')
                           ? 'bg-[#EDF9E8] text-[#2D6A2D] border-[#D7F1C8]'
                           : candidate.emailStatus === 'Interview Scheduled'
-                          ? 'bg-purple-50 text-purple-700 border-purple-100'
+                          ? 'bg-[#FEF9E7] text-[#B7950B] border-[#F9E79F]'
                           : candidate.emailStatus === 'Failed'
                           ? 'bg-[#FFF5F5] text-[#C92A2A] border-[#FFC9C9]'
                           : 'bg-[#F4F7F5] text-gray-500 border-[#E3ECE6]'
@@ -896,8 +898,8 @@ const Candidates: React.FC = () => {
                         {candidate.emailStatus || 'Pending'}
                       </span>
                     </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-right text-xs">
-                      <div className="flex justify-end gap-2">
+                    <td className="pl-4 pr-8 py-4 whitespace-nowrap text-right text-xs">
+                      <div className="flex justify-end gap-3">
                         {/* View Action */}
                         <Button
                           variant="outline"

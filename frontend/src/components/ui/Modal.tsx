@@ -80,7 +80,7 @@ const Modal: React.FC<ModalProps> = ({
           >
             {/* Header */}
             <div className="px-6 py-5 border-b border-brand-border bg-brand-bg/10 flex items-center justify-between shrink-0">
-              <h3 className="text-base font-bold text-brand-text font-poppins">
+              <h3 className="text-base font-bold text-brand-text font-jakarta">
                 {title}
               </h3>
               <button

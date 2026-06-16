@@ -9,7 +9,10 @@ export default defineConfig({
       '/api': {
         target: 'http://localhost:5000',
         changeOrigin: true,
-        secure: false
+        secure: false,
+        // Google Apps Script can take 5-20s to respond — extend timeouts
+        proxyTimeout: 60000,
+        timeout: 60000,
       }
     }
   }

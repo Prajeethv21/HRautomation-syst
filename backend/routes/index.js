@@ -1,4 +1,5 @@
 import express from 'express';
+import multer from 'multer';
 import {
   fetchCandidates,
   fetchCandidateByEmail,
@@ -7,9 +8,19 @@ import {
   sendInterviewEmailWorkflow,
   updateCandidateStatus,
   fetchDepartmentCandidates,
-  triggerResumeProcessing
+  triggerResumeProcessing,
+  repairCandidatesWorkflow,
+  uploadResumeToDrive
 } from '../services/candidateService.js';
 import { ingestCandidate } from '../services/candidateSourceService.js';
+
+// Configure multer to use memory storage
+const upload = multer({
+  storage: multer.memoryStorage(),
+  limits: {
+    fileSize: 10 * 1024 * 1024 // 10MB limit per file
+  }
+});
 
 const router = express.Router();
 
@@ -91,6 +102,15 @@ router.post('/candidates/status', async (req, res) => {
   }
 });
 
+router.post('/candidates/repair', async (req, res) => {
+  try {
+    const result = await repairCandidatesWorkflow();
+    res.json(result);
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
 
 async function getPreviewText(candidate) {
   return `Dear ${candidate.candidateName},\n\nWe are pleased to offer you the position of ${candidate.role} starting on ${candidate.joiningDate}.\n\nBest regards,\nDeepwoods Green HR`;
@@ -143,6 +163,42 @@ router.post('/resumes/process', async (req, res) => {
     const result = await triggerResumeProcessing();
     res.json(result);
   } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+router.post('/resumes/upload', upload.array('resumes'), async (req, res) => {
+  try {
+    const { departmentId } = req.body;
+    const files = req.files;
+
+    if (!departmentId) {
+      return res.status(400).json({ success: false, error: 'departmentId is required' });
+    }
+
+    if (!files || files.length === 0) {
+      return res.status(400).json({ success: false, error: 'No files were uploaded' });
+    }
+
+    console.log(`[BACKEND] Received ${files.length} resume upload request for department: ${departmentId}`);
+
+    const results = [];
+    for (const file of files) {
+      const result = await uploadResumeToDrive(file.buffer, file.originalname, departmentId);
+      results.push({
+        fileName: file.originalname,
+        success: true,
+        fileId: result.fileId
+      });
+    }
+
+    res.json({
+      success: true,
+      message: `Successfully uploaded ${files.length} resume(s) to Google Drive.`,
+      results
+    });
+  } catch (error) {
+    console.error('[BACKEND] Resume upload failed:', error);
     res.status(500).json({ success: false, error: error.message });
   }
 });

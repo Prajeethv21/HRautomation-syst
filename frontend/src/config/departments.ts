@@ -15,13 +15,13 @@ export const DEPARTMENTS: DepartmentConfig[] = [
   {
     id: 'ai-data-engineer',
     name: 'AI/Data Engineer',
-    sheetName: 'AI Automation Engineer',
+    sheetName: 'AI/Data Engineer',
     roles: ['AI Automation Engineer', 'AI/Data Engineer']
   },
   {
     id: 'web-developer',
     name: 'Web Developer',
-    sheetName: 'Web Devloper',
+    sheetName: 'Web Developer',
     roles: ['Web Developer']
   },
   {

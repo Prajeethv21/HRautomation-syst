@@ -17,7 +17,7 @@ const Header: React.FC<HeaderProps> = ({ title }) => {
     <header className="h-16 border-b border-brand-border bg-white px-8 flex items-center justify-between sticky top-0 z-10">
       {/* Title */}
       <div>
-        <h2 className="text-xl font-semibold text-brand-text font-poppins">{title}</h2>
+        <h2 className="text-xl font-semibold text-brand-text font-jakarta">{title}</h2>
       </div>
 
       {/* Actions and Status */}

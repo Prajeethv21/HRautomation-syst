@@ -163,24 +163,20 @@ export const sendInterviewEmail = async (email: string): Promise<{ success: bool
 
     console.log('React received interview response status:', response.status);
 
-    if (!response.ok) {
-      throw new Error(`HTTP error! status: ${response.status}`);
-    }
-
-    const responseData = await response.json();
+    const responseData = await response.json().catch(() => ({}));
     console.log('React received interview response body:', JSON.stringify(responseData));
 
-    if (responseData && responseData.success) {
+    if (response.ok && responseData?.success) {
       return {
         success: true,
         message: responseData.message || 'Interview Email Sent Successfully'
       };
     }
 
-    throw new Error(responseData?.message || 'Proxy backend returned failure status');
+    throw new Error(responseData?.message || `HTTP error! status: ${response.status}`);
   } catch (error: any) {
     console.error('Proxy interview POST failed:', error);
-    throw new Error('Failed To Send Interview Email');
+    throw new Error(error.message || 'Failed To Send Interview Email');
   }
 };
 
@@ -220,9 +216,35 @@ export const updateCandidateStatus = async (email: string, status: string): Prom
   }
 };
 
+// Retry helper with exponential backoff
+async function fetchWithRetry(url: string, maxRetries = 2, baseDelayMs = 2000): Promise<Response> {
+  let lastError: Error = new Error('Unknown error');
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    if (attempt > 0) {
+      const delay = baseDelayMs * Math.pow(2, attempt - 1);
+      console.log(`[RETRY] Attempt ${attempt + 1} for ${url} after ${delay}ms`);
+      await new Promise(res => setTimeout(res, delay));
+    }
+    try {
+      const response = await fetch(url);
+      // Only retry on server errors (500+), not client errors (4xx)
+      if (response.status >= 500 && attempt < maxRetries) {
+        lastError = new Error(`HTTP error! status: ${response.status}`);
+        console.warn(`[RETRY] Got ${response.status}, will retry...`);
+        continue;
+      }
+      return response;
+    } catch (err: any) {
+      lastError = err;
+      if (attempt < maxRetries) continue;
+    }
+  }
+  throw lastError;
+}
+
 export const getDepartmentCandidates = async (sheetName: string): Promise<DepartmentCandidate[]> => {
   try {
-    const response = await fetch(`/api/departments/${encodeURIComponent(sheetName)}`);
+    const response = await fetchWithRetry(`/api/departments/${encodeURIComponent(sheetName)}`);
 
     if (!response.ok) {
       throw new Error(`HTTP error! status: ${response.status}`);
@@ -267,3 +289,32 @@ export const triggerResumeProcessing = async (): Promise<{ success: boolean; mes
     throw new Error('Failed to trigger resume processing');
   }
 };
+
+export const uploadResumes = async (files: File[], departmentId: string): Promise<{ success: boolean; message: string; results?: any[] }> => {
+  try {
+    const formData = new FormData();
+    formData.append('departmentId', departmentId);
+    files.forEach((file) => {
+      formData.append('resumes', file);
+    });
+
+    const response = await fetch('/api/resumes/upload', {
+      method: 'POST',
+      body: formData
+    });
+
+    const responseData = await response.json();
+    if (response.ok && responseData?.success) {
+      return {
+        success: true,
+        message: responseData.message || 'Resumes uploaded successfully',
+        results: responseData.results
+      };
+    }
+    throw new Error(responseData?.error || responseData?.message || `HTTP error! status: ${response.status}`);
+  } catch (error: any) {
+    console.error('Proxy resume upload failed:', error);
+    throw new Error(error.message || 'Failed to upload resumes');
+  }
+};
+
