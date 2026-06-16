@@ -18,10 +18,10 @@ export interface DepartmentCandidate {
   candidateName: string;
   email: string;
   phoneNumber: string;
-  workExperience: string;
   ug: string;
   pg: string;
   college: string;
+  graduationYear?: string;
   location?: string;
   linkedin: string;
   github: string;
@@ -66,7 +66,12 @@ export const getDashboardStats = async (): Promise<DashboardStats> => {
     return {
       totalCandidates: candidates.length,
       pendingEmails: candidates.filter((c) => c.emailStatus === 'Pending').length,
-      emailsSent: candidates.filter((c) => c.emailStatus === 'Sent').length,
+      emailsSent: candidates.filter((c) => 
+        c.emailStatus && (
+          c.emailStatus.toLowerCase().includes('sent') || 
+          c.emailStatus === 'Interview Scheduled'
+        )
+      ).length,
       selectedCandidates: candidates.filter((c) => c.status === 'Selected').length
     };
   } catch (error) {
@@ -75,18 +80,9 @@ export const getDashboardStats = async (): Promise<DashboardStats> => {
   }
 };
 
-export const sendJoiningLetter = async (rowNumber: number): Promise<{ success: boolean; message: string }> => {
+export const sendJoiningLetter = async (email: string): Promise<{ success: boolean; message: string }> => {
   try {
-    // Retrieve latest candidates list to map rowNumber to email
-    const candidates = await getCandidates();
-    const index = rowNumber - 2; // Row 2 is index 0
-
-    if (index < 0 || index >= candidates.length) {
-      throw new Error('Candidate row index out of bounds');
-    }
-
-    const candidateEmail = candidates[index].email;
-    const requestPayload = { email: candidateEmail };
+    const requestPayload = { email };
 
     console.log('React sending POST request to /api/candidates/send with body:', JSON.stringify(requestPayload));
 
@@ -123,7 +119,6 @@ export const sendJoiningLetter = async (rowNumber: number): Promise<{ success: b
 
 export const sendRejectionEmail = async (email: string): Promise<{ success: boolean; message: string }> => {
   try {
-    // Align payload with joining workflow: use candidateEmail key
     const requestPayload = { candidateEmail: email };
     console.log('Rejection payload:', requestPayload);
 
@@ -204,7 +199,6 @@ export const updateCandidateStatus = async (email: string, status: string): Prom
     });
     console.log('Status update response status:', response.status);
 
-    // Try to parse response regardless of status code
     let responseData: any = null;
     try {
       responseData = await response.json();
@@ -274,5 +268,3 @@ export const triggerResumeProcessing = async (): Promise<{ success: boolean; mes
     throw new Error('Failed to trigger resume processing');
   }
 };
-
-

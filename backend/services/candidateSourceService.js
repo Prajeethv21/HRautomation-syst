@@ -33,10 +33,10 @@ export class BaseCandidateSource {
       emailStatus: candidate.emailStatus || 'Pending',
       source: this.sourceName,
       phoneNumber: candidate.phoneNumber || '',
-      workExperience: candidate.workExperience || '',
       ug: candidate.ug || '',
       pg: candidate.pg || '',
       college: candidate.college || '',
+      graduationYear: candidate.graduationYear || '',
       location: candidate.location || '',
       linkedin: candidate.linkedin || '',
       github: candidate.github || ''

@@ -252,13 +252,9 @@ const Candidates: React.FC = () => {
       const target = targets[i];
       setBulkProgressMsg(`Sending letter ${i + 1}/${targets.length} to ${target.candidateName}...`);
       try {
-        const idx = candidates.findIndex((c) => c.email === target.email);
-        if (idx !== -1) {
-          const rowNumber = idx + 2;
-          const res = await sendJoiningLetter(rowNumber);
-          if (res.success) {
-            successCount++;
-          }
+        const res = await sendJoiningLetter(target.email);
+        if (res.success) {
+          successCount++;
         }
       } catch (err) {
         console.error(err);
@@ -331,11 +327,7 @@ const Candidates: React.FC = () => {
       setSendingLetterEmail(email);
       showToast(`Generating and sending joining letter for ${name}...`, 'info');
 
-      const index = candidates.findIndex((c) => c.email === email);
-      if (index === -1) throw new Error('Candidate not found');
-      const rowNumber = index + 2;
-
-      const response = await sendJoiningLetter(rowNumber);
+      const response = await sendJoiningLetter(email);
 
       if (response.success) {
         showToast('Joining Letter Sent Successfully', 'success');

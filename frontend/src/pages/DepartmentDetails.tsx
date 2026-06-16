@@ -72,7 +72,7 @@ const DepartmentDetails: React.FC = () => {
   const filterRef = useRef<HTMLDivElement>(null);
 
   // Sorting state
-  const [sortField, setSortField] = useState<'candidateName' | 'workExperience' | 'status' | 'source' | null>(null);
+  const [sortField, setSortField] = useState<'candidateName' | 'status' | 'source' | null>(null);
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc');
 
   // Selection state for bulk actions
@@ -229,12 +229,7 @@ const DepartmentDetails: React.FC = () => {
         let valA = (a[sortField] || '').toString().toLowerCase();
         let valB = (b[sortField] || '').toString().toLowerCase();
 
-        // Handle numeric experience comparison if needed
-        if (sortField === 'workExperience') {
-          const numA = parseInt(valA.replace(/\D/g, '')) || 0;
-          const numB = parseInt(valB.replace(/\D/g, '')) || 0;
-          return sortDirection === 'asc' ? numA - numB : numB - numA;
-        }
+
 
         return sortDirection === 'asc' 
           ? valA.localeCompare(valB) 
@@ -321,16 +316,9 @@ const DepartmentDetails: React.FC = () => {
       const target = targets[i];
       setProgressMsg(`Sending letter ${i + 1}/${targets.length} to ${target.candidateName}...`);
       try {
-        const masterList = await fetch('/api/candidates').then(res => res.json());
-        if (masterList.success) {
-          const index = masterList.candidates.findIndex((c: any) => c.email === target.email);
-          if (index !== -1) {
-            const rowNumber = index + 2;
-            const res = await sendJoiningLetter(rowNumber);
-            if (res.success) {
-              successCount++;
-            }
-          }
+        const res = await sendJoiningLetter(target.email);
+        if (res.success) {
+          successCount++;
         }
       } catch (err) {
         console.error(`Error sending joining letter for ${target.email}:`, err);
@@ -378,14 +366,7 @@ const DepartmentDetails: React.FC = () => {
       setSendingLetterEmail(email);
       showToast(`Generating and sending joining letter for ${name}...`, 'info');
 
-      // Fetch candidates list to get the row number of this candidate
-      const masterList = await fetch('/api/candidates').then(res => res.json());
-      if (!masterList.success) throw new Error(masterList.message || 'Failed to fetch candidate row');
-      const index = masterList.candidates.findIndex((c: any) => c.email === email);
-      if (index === -1) throw new Error('Candidate not found in Candidates list');
-      const rowNumber = index + 2;
-
-      const response = await sendJoiningLetter(rowNumber);
+      const response = await sendJoiningLetter(email);
 
       if (response.success) {
         showToast('Joining Letter Sent Successfully', 'success');
@@ -449,7 +430,7 @@ const DepartmentDetails: React.FC = () => {
   };
 
   // Helper sorting headers render
-  const renderSortHeader = (label: string, field: 'candidateName' | 'workExperience' | 'status' | 'source') => {
+  const renderSortHeader = (label: string, field: 'candidateName' | 'status' | 'source') => {
     const isSorted = sortField === field;
     return (
       <button
@@ -816,10 +797,10 @@ const DepartmentDetails: React.FC = () => {
                   <th className="px-6 py-4.5 text-left">{renderSortHeader('Candidate Name', 'candidateName')}</th>
                   <th className="px-6 py-4.5 text-xs font-bold text-gray-500 uppercase tracking-wider font-jakarta">Email</th>
                   <th className="px-6 py-4.5 text-xs font-bold text-gray-500 uppercase tracking-wider font-jakarta">Phone</th>
-                  <th className="px-6 py-4.5 text-left">{renderSortHeader('Experience', 'workExperience')}</th>
                   <th className="px-6 py-4.5 text-xs font-bold text-gray-500 uppercase tracking-wider font-jakarta">UG</th>
                   <th className="px-6 py-4.5 text-xs font-bold text-gray-500 uppercase tracking-wider font-jakarta">PG</th>
                   <th className="px-6 py-4.5 text-xs font-bold text-gray-500 uppercase tracking-wider font-jakarta">College</th>
+                  <th className="px-6 py-4.5 text-xs font-bold text-gray-500 uppercase tracking-wider font-jakarta">Grad. Year</th>
                   <th className="px-6 py-4.5 text-xs font-bold text-gray-500 uppercase tracking-wider font-jakarta">Links</th>
                   <th className="px-6 py-4.5 text-left">{renderSortHeader('Status', 'status')}</th>
                   <th className="px-6 py-4.5 text-xs font-bold text-gray-500 uppercase tracking-wider text-right font-jakarta">Actions</th>
@@ -850,9 +831,6 @@ const DepartmentDetails: React.FC = () => {
                     <td className="px-6 py-4 whitespace-nowrap text-xs text-gray-500 max-w-[120px] truncate overflow-hidden text-ellipsis whitespace-nowrap" title={candidate.phoneNumber || 'N/A'}>
                       {candidate.phoneNumber || 'N/A'}
                     </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-xs font-semibold text-gray-600 max-w-[80px] truncate overflow-hidden text-ellipsis whitespace-nowrap" title={candidate.workExperience ? `${candidate.workExperience} months` : 'N/A'}>
-                      {candidate.workExperience ? `${candidate.workExperience} months` : 'N/A'}
-                    </td>
                     <td className="px-6 py-4 whitespace-nowrap text-xs text-gray-500 max-w-[120px] truncate overflow-hidden text-ellipsis whitespace-nowrap" title={candidate.ug || 'N/A'}>
                       {candidate.ug || 'N/A'}
                     </td>
@@ -861,6 +839,9 @@ const DepartmentDetails: React.FC = () => {
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-xs text-gray-500 max-w-[160px] truncate overflow-hidden text-ellipsis whitespace-nowrap" title={candidate.college || 'N/A'}>
                       {candidate.college || 'N/A'}
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-xs text-gray-500 max-w-[100px] truncate overflow-hidden text-ellipsis whitespace-nowrap" title={candidate.graduationYear || 'N/A'}>
+                      {candidate.graduationYear || 'N/A'}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-xs text-gray-500">
                       <div className="flex items-center gap-2">

@@ -4,6 +4,15 @@ import dotenv from 'dotenv';
 // Load variables
 dotenv.config();
 
+let candidatesCache = null;
+let cacheTimestamp = 0;
+const CACHE_TTL_MS = 5000; // 5 seconds in-memory cache
+
+export function clearCandidatesCache() {
+  candidatesCache = null;
+  cacheTimestamp = 0;
+}
+
 function getCredentials() {
   const url = process.env.VITE_APPS_SCRIPT_URL;
   const sheetId = process.env.VITE_GOOGLE_SHEET_ID;
@@ -17,9 +26,15 @@ function getCredentials() {
 }
 
 export async function fetchCandidates() {
+  if (candidatesCache && (Date.now() - cacheTimestamp < CACHE_TTL_MS)) {
+    console.log('[CACHE HIT] Returning cached candidates list');
+    return { data: candidatesCache, mode: 'google' };
+  }
+
   const { url, sheetId } = getCredentials();
 
   try {
+    console.log('[CACHE MISS] Fetching candidates from Apps Script Web App');
     const response = await axios.get(url, {
       params: {
         action: 'getCandidates',
@@ -29,7 +44,9 @@ export async function fetchCandidates() {
     });
 
     if (response.data && response.data.success && Array.isArray(response.data.data)) {
-      return { data: response.data.data, mode: 'google' };
+      candidatesCache = response.data.data;
+      cacheTimestamp = Date.now();
+      return { data: candidatesCache, mode: 'google' };
     }
 
     const errMsg = response.data?.message || 'Apps Script returned success: false or invalid candidate data';
@@ -50,6 +67,7 @@ export async function fetchCandidateByEmail(email) {
 }
 
 export async function sendJoiningLetterWorkflow(email) {
+  clearCandidatesCache();
   const { url, sheetId, templateId } = getCredentials();
 
   const payload = {
@@ -95,6 +113,7 @@ export async function sendJoiningLetterWorkflow(email) {
 }
 
 export async function sendRejectionEmailWorkflow(email) {
+  clearCandidatesCache();
   const { url, sheetId } = getCredentials();
 
   const payload = {
@@ -139,6 +158,7 @@ export async function sendRejectionEmailWorkflow(email) {
 }
 
 export async function sendInterviewEmailWorkflow(email) {
+  clearCandidatesCache();
   const { url, sheetId } = getCredentials();
 
   const payload = {
@@ -183,6 +203,7 @@ export async function sendInterviewEmailWorkflow(email) {
 }
 
 export async function updateCandidateStatus(email, status) {
+  clearCandidatesCache();
   const { url, sheetId } = getCredentials();
 
   const payload = {
@@ -266,6 +287,7 @@ export async function fetchDepartmentCandidates(sheetName) {
 }
 
 export async function triggerResumeProcessing() {
+  clearCandidatesCache();
   const { url, sheetId } = getCredentials();
 
   try {

@@ -32,7 +32,8 @@ const ROLE_TO_SHEET_MAP = {
   "Web Developer": "Web Devloper",
   "Marketing": "Marketing",
   "Creative": "Creative",
-  "Others": "Others"
+  "Others": "Others",
+  "Other": "Others"
 };
 
 // --- ORIGINAL AUTOMATION FUNCTIONS ---
@@ -856,7 +857,7 @@ function handleGetDepartmentCandidates(sheetId, sheetName) {
       }
     }
 
-    // Columns: Candidate Name, Email, Phone Number, Work Experience, UG, PG, College, Location, LinkedIn, GitHub, Status
+    // Columns: Candidate Name, Email, Phone Number, UG, PG, College, Graduation Year, Location, LinkedIn, GitHub, Status
     for (let i = 1; i < data.length; i++) {
       const row = data[i];
       const candidate = {};
@@ -864,10 +865,10 @@ function handleGetDepartmentCandidates(sheetId, sheetName) {
       candidate.candidateName = row[0] ? row[0].toString().trim() : "";
       candidate.email = row[1] ? row[1].toString().trim() : "";
       candidate.phoneNumber = row[2] ? row[2].toString().trim() : "";
-      candidate.workExperience = row[3] ? row[3].toString().trim() : "";
-      candidate.ug = row[4] ? row[4].toString().trim() : "";
-      candidate.pg = row[5] ? row[5].toString().trim() : "";
-      candidate.college = row[6] ? row[6].toString().trim() : "";
+      candidate.ug = row[3] ? row[3].toString().trim() : "";
+      candidate.pg = row[4] ? row[4].toString().trim() : "";
+      candidate.college = row[5] ? row[5].toString().trim() : "";
+      candidate.graduationYear = row[6] ? row[6].toString().trim() : "";
       candidate.location = row[7] ? row[7].toString().trim() : "N/A";
       candidate.linkedin = row[8] ? row[8].toString().trim() : "";
       candidate.github = row[9] ? row[9].toString().trim() : "";
@@ -936,10 +937,10 @@ function handleCreateCandidate(sheetId, candidate) {
           "Candidate Name",
           "Email",
           "Phone Number",
-          "Work Experience",
           "UG",
           "PG",
           "College",
+          "Graduation Year",
           "Location",
           "LinkedIn",
           "GitHub",
@@ -947,15 +948,15 @@ function handleCreateCandidate(sheetId, candidate) {
         ]);
       }
 
-      // Columns: Candidate Name, Email, Phone Number, Work Experience, UG, PG, College, Location, LinkedIn, GitHub, Status
+      // Columns: Candidate Name, Email, Phone Number, UG, PG, College, Graduation Year, Location, LinkedIn, GitHub, Status
       deptSheet.appendRow([
         candidate.name,
         candidate.email,
         candidate.phoneNumber || "",
-        candidate.workExperience || "",
         candidate.ug || "",
         candidate.pg || "",
         candidate.college || "",
+        candidate.graduationYear || "",
         candidate.location || "N/A",
         candidate.linkedin || "",
         candidate.github || "",
@@ -1410,12 +1411,137 @@ function extractTextFromDOCX(fileId) {
     mimeType: MimeType.GOOGLE_DOCS
   };
 
-  var tempFile = Drive.Files.insert(resource, blob);
+  // Convert Docx to Google Doc correctly to allow DocumentApp parsing
+  var tempFile = Drive.Files.insert(resource, blob, { convert: true });
   var tempDoc = DocumentApp.openById(tempFile.id);
   var text = tempDoc.getBody().getText();
 
   Drive.Files.remove(tempFile.id);
   return text;
+}
+
+function extractCandidateName(lines) {
+  var blacklist = /\b(resume|cv|curriculum|vitae|portfolio|contact|address|phone|email|page|experience|education|summary|profile|skills|github|linkedin|mobile|tel|date|birth|nationality|gender|hobbies|languages|objective|reference)\b/i;
+  
+  function cleanLine(l) {
+    return l.replace(/[\r\n\t]/g, "").trim();
+  }
+
+  for (var i = 0; i < Math.min(8, lines.length); i++) {
+    var line = cleanLine(lines[i]);
+    if (!line) continue;
+    
+    if (line.length < 3 || line.length > 35) continue;
+    if (/\d/.test(line)) continue;
+    if (/[@\/\\#_\+\*]/.test(line)) continue;
+    if (blacklist.test(line)) continue;
+    
+    var words = line.split(/\s+/).filter(Boolean);
+    if (words.length >= 2 && words.length <= 4) {
+      var capitalizedCount = 0;
+      words.forEach(function(w) {
+        if (w[0] && w[0] === w[0].toUpperCase() && /[a-zA-Z]/.test(w[0])) {
+          capitalizedCount++;
+        }
+      });
+      if (capitalizedCount === words.length) {
+        return line;
+      }
+    }
+  }
+
+  for (var i = 0; i < Math.min(10, lines.length); i++) {
+    var line = cleanLine(lines[i]);
+    if (!line) continue;
+    if (line.length >= 3 && line.length <= 40 && !/\d/.test(line) && !/[@\/]/.test(line) && !blacklist.test(line)) {
+      var words = line.split(/\s+/).filter(Boolean);
+      if (words.length >= 1 && words.length <= 5) {
+        return line;
+      }
+    }
+  }
+
+  if (lines.length > 0) {
+    var firstLine = cleanLine(lines[0]);
+    if (firstLine.toLowerCase().indexOf("resume") === -1 && firstLine.toLowerCase().indexOf("cv") === -1) {
+      return firstLine;
+    }
+    if (lines.length > 1) {
+      return cleanLine(lines[1]);
+    }
+  }
+  
+  return "Unknown Candidate";
+}
+
+function extractAndNormalizePhone(text) {
+  var regex = /(?:\+?\d{1,3}[-.\s]?)?\(?\d{3,5}\)?[-.\s]?\d{3}[-.\s]?\d{4,5}/g;
+  var matches = text.match(regex);
+  if (!matches) return "";
+  
+  for (var i = 0; i < matches.length; i++) {
+    var raw = matches[i].trim();
+    var digits = raw.replace(/[^\d+]/g, "");
+    
+    if (digits.length < 10 || digits.length > 15) continue;
+    
+    if (digits.startsWith("+91") && digits.length === 13) {
+      return "+91 " + digits.substring(3, 8) + " " + digits.substring(8);
+    }
+    if (digits.startsWith("91") && digits.length === 12) {
+      return "+91 " + digits.substring(2, 7) + " " + digits.substring(7);
+    }
+    if (digits.startsWith("0") && digits.length === 11) {
+      return "+91 " + digits.substring(1, 6) + " " + digits.substring(6);
+    }
+    if (digits.length === 10) {
+      return "+91 " + digits.substring(0, 5) + " " + digits.substring(5);
+    }
+    
+    if (digits.startsWith("+")) {
+      return digits;
+    }
+  }
+  
+  return matches[0].replace(/[()]/g, "").trim();
+}
+
+function extractGraduationYear(text, ugLine, pgLine, collegeLine) {
+  var explicitMatch = text.match(/\b(?:graduation|passing|passed|class\s+of)\s*(?::|in)?\s*\b(19\d{2}|20\d{2})\b/i);
+  if (explicitMatch) {
+    return explicitMatch[1];
+  }
+  
+  var yearRegex = /\b(19\d{2}|20\d{2})\b/g;
+  var years = [];
+  
+  var searchLines = [ugLine, pgLine, collegeLine].filter(Boolean);
+  searchLines.forEach(function(line) {
+    var matches = line.match(yearRegex);
+    if (matches) {
+      matches.forEach(function(y) {
+        years.push(parseInt(y, 10));
+      });
+    }
+  });
+  
+  if (years.length > 0) {
+    return Math.max.apply(null, years).toString();
+  }
+  
+  var lines = text.split('\n');
+  for (var i = 0; i < lines.length; i++) {
+    var line = lines[i].toLowerCase();
+    if (line.indexOf("education") !== -1 || line.indexOf("academic") !== -1 || line.indexOf("degree") !== -1 || line.indexOf("bachelor") !== -1 || line.indexOf("master") !== -1) {
+      for (var j = i; j <= Math.min(i + 2, lines.length - 1); j++) {
+        var m = lines[j].match(/\b(19\d{2}|20\d{2})\b/);
+        if (m) {
+          return m[1];
+        }
+      }
+    }
+  }
+  return "";
 }
 
 // Regular expressions and scores mapping to parse resume details
@@ -1428,7 +1554,7 @@ function parseCandidateDetails(text) {
     college: "",
     ug: "",
     pg: "",
-    workExperience: "",
+    graduationYear: "",
     linkedin: "",
     github: "",
     role: "Sustainability" // default fallback
@@ -1436,29 +1562,18 @@ function parseCandidateDetails(text) {
 
   var lines = text.split('\n').map(function (line) { return line.trim(); }).filter(Boolean);
 
-  // Name Heuristic: Grab first non-header line
-  if (lines.length > 0) {
-    details.name = lines[0];
-    if (details.name.toLowerCase().indexOf("resume") !== -1 || details.name.toLowerCase().indexOf("cv") !== -1) {
-      if (lines.length > 1) {
-        details.name = lines[1];
-      }
-    }
-  }
+  // Name extraction
+  details.name = extractCandidateName(lines);
 
   // Email regex
   var emailRegex = /[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/;
   var emailMatch = text.match(emailRegex);
   if (emailMatch) {
-    details.email = emailMatch[0];
+    details.email = emailMatch[0].trim();
   }
 
-  // Phone regex
-  var phoneRegex = /(\+?\d{1,3}[-.\s]?)?\(?\d{3}\)?[-.\s]?\d{3}[-.\s]?\d{4}/;
-  var phoneMatch = text.match(phoneRegex);
-  if (phoneMatch) {
-    details.phoneNumber = phoneMatch[0];
-  }
+  // Phone extraction & normalization
+  details.phoneNumber = extractAndNormalizePhone(text);
 
   // LinkedIn and GitHub regex
   var linkedinRegex = /linkedin\.com\/in\/[a-zA-Z0-9_-]+/;
@@ -1527,8 +1642,8 @@ function parseCandidateDetails(text) {
     if (collMatch) details.college = cleanCollegeName(collMatch[1]);
   }
 
-  // Work experience extraction (months)
-  details.workExperience = extractExperienceInMonths(text);
+  // Extract Graduation Year
+  details.graduationYear = extractGraduationYear(text, details.ug, details.pg, details.college);
 
   return details;
 }
@@ -1837,7 +1952,11 @@ function handleSendInterviewEmail(sheetId, candidateEmail) {
         .create();
       
       var triggerId = trigger.getUniqueId();
-      PropertiesService.getScriptProperties().setProperty(triggerId, candidateEmail);
+      var triggerData = {
+        email: candidateEmail,
+        sheetId: sheetId || ""
+      };
+      PropertiesService.getScriptProperties().setProperty(triggerId, JSON.stringify(triggerData));
       Logger.log("Scheduled interview reminder trigger: ID=" + triggerId + ", Time=" + reminderTime.toString());
     } catch (triggerErr) {
       Logger.log("Failed to schedule reminder trigger: " + triggerErr.toString());
@@ -1859,7 +1978,17 @@ function parseInterviewDateTime(dateVal, timeVal) {
   if (dateVal instanceof Date) {
     dateObj = new Date(dateVal.getTime());
   } else {
-    dateObj = new Date(dateVal.toString().trim());
+    var dateStr = dateVal.toString().trim();
+    var parts = dateStr.split("-");
+    if (parts.length === 3) {
+      var year = parseInt(parts[0], 10);
+      var month = parseInt(parts[1], 10) - 1; // 0-based
+      var day = parseInt(parts[2], 10);
+      dateObj = new Date();
+      dateObj.setFullYear(year, month, day);
+    } else {
+      dateObj = new Date(dateStr);
+    }
   }
   
   if (isNaN(dateObj.getTime())) {
@@ -1913,16 +2042,21 @@ function deleteTriggerById(triggerId) {
 
 function sendInterviewReminderEmail(e) {
   var triggerId = e.triggerUid;
-  var candidateEmail = PropertiesService.getScriptProperties().getProperty(triggerId);
-  Logger.log("sendInterviewReminderEmail fired for trigger ID: " + triggerId + ", candidateEmail: " + candidateEmail);
+  var triggerDataStr = PropertiesService.getScriptProperties().getProperty(triggerId);
+  Logger.log("sendInterviewReminderEmail fired for trigger ID: " + triggerId + ", triggerDataStr: " + triggerDataStr);
   
-  if (!candidateEmail) {
-    Logger.log("No candidate email mapped for trigger ID: " + triggerId);
+  if (!triggerDataStr) {
+    Logger.log("No trigger data mapped for trigger ID: " + triggerId);
     return;
   }
 
   try {
-    const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName("Candidates");
+    var triggerData = JSON.parse(triggerDataStr);
+    var candidateEmail = triggerData.email;
+    var sheetId = triggerData.sheetId;
+
+    var ss = sheetId ? SpreadsheetApp.openById(sheetId) : SpreadsheetApp.getActiveSpreadsheet();
+    const sheet = ss.getSheetByName("Candidates");
     const data = sheet.getDataRange().getValues();
     let rowIndex = -1;
     let candidateName = "";
@@ -2101,10 +2235,10 @@ function runExistingDataRepair() {
         "Candidate Name",
         "Email",
         "Phone Number",
-        "Work Experience",
         "UG",
         "PG",
         "College",
+        "Graduation Year",
         "Location",
         "LinkedIn",
         "GitHub",
@@ -2113,76 +2247,54 @@ function runExistingDataRepair() {
 
       for (let j = 1; j < data.length; j++) {
         var row = data[j];
-        var cName = "";
-        var email = "";
-        var phone = "";
-        var exp = "0";
-        var ug = "";
-        var pg = "";
-        var college = "";
-        var location = "N/A";
-        var linkedin = "";
-        var github = "";
-        var status = "Submitted";
-
-        row.forEach(function(cell) {
-          if (cell === null || cell === undefined) return;
-          var val = cell.toString().trim();
-          if (!val) return;
-
-          if (val.indexOf("@") !== -1 && val.indexOf(".") !== -1) {
-            email = val;
-          } else if (val.indexOf("linkedin.com") !== -1) {
-            linkedin = val;
-            if (linkedin && !linkedin.startsWith("http")) linkedin = "https://" + linkedin;
-          } else if (val.indexOf("github.com") !== -1) {
-            github = val;
-            if (github && !github.startsWith("http")) github = "https://" + github;
-          } else if (allowedStatuses.indexOf(val) !== -1) {
-            status = val;
-          } else if (val === "Applied" || val === "Interviewing") {
-            status = "Submitted";
-          } else if (val === "Maybe") {
-            status = "On Hold";
-          } else if (val === "Not Selected") {
-            status = "Rejected";
-          } else if (/^\+?\d[\d\s\-\(\)]+$/.test(val) && val.replace(/\D/g, "").length >= 7) {
-            phone = val;
-          } else if (/\b(b\.?tech|b\.?e|b\.?sc|b\.?c|b\.?a|b\.?com|b\.?b\.?a|bachelor)/i.test(val)) {
-            ug = cleanUGDegree(val);
-          } else if (/\b(m\.?tech|m\.?e|m\.?sc|m\.?a|m\.?com|m\.?b\.?a|master|mba)/i.test(val)) {
-            pg = cleanPGDegree(val);
-          } else if (/\b(university|college|institute|school|academy|vidyapeeth|iit|nit|bits)/i.test(val)) {
-            college = cleanCollegeName(val);
-          } else if (/\b(bangalore|bengaluru|mysore|chennai|hyderabad)\b/i.test(val)) {
-            location = val;
-          }
-        });
-
-        if (!cName && row[0]) cName = row[0].toString().trim();
-        if (!email && row[1]) email = row[1].toString().trim();
-        if (row.length > 7 && row[7]) {
-          location = row[7].toString().trim();
-        }
-
+        var cName = row[0] ? row[0].toString().trim() : "";
+        var email = row[1] ? row[1].toString().trim() : "";
+        var phone = row[2] ? row[2].toString().trim() : "";
         var rawExp = row[3] ? row[3].toString().trim() : "";
-        if (rawExp) {
-          var numMatch = rawExp.match(/\d+/);
-          if (numMatch) {
-            exp = numMatch[0];
-          } else {
-            exp = "0";
-          }
+        var ugRaw = row[4] ? row[4].toString().trim() : "";
+        var pgRaw = row[5] ? row[5].toString().trim() : "";
+        var collegeRaw = row[6] ? row[6].toString().trim() : "";
+        var location = row[7] ? row[7].toString().trim() : "N/A";
+        var linkedin = row[8] ? row[8].toString().trim() : "";
+        var github = row[9] ? row[9].toString().trim() : "";
+        var status = row[10] ? row[10].toString().trim() : "Submitted";
+
+        // Extract graduation year before cleaning degrees
+        var gradYear = "";
+        var yearRegex = /\b(19\d{2}|20\d{2})\b/;
+        var match = ugRaw.match(yearRegex) || pgRaw.match(yearRegex) || collegeRaw.match(yearRegex) || rawExp.match(yearRegex);
+        if (match) {
+          gradYear = match[1];
         }
+
+        // Clean degrees and college
+        var ug = cleanUGDegree(ugRaw);
+        var pg = cleanPGDegree(pgRaw);
+        var college = cleanCollegeName(collegeRaw);
+
+        // Normalize status
+        if (status === "Applied" || status === "Interviewing") {
+          status = "Submitted";
+        } else if (status === "Maybe") {
+          status = "On Hold";
+        } else if (status === "Not Selected") {
+          status = "Rejected";
+        } else if (allowedStatuses.indexOf(status) === -1) {
+          status = "Submitted";
+        }
+
+        // Normalize URLs
+        if (linkedin && !linkedin.startsWith("http")) linkedin = "https://" + linkedin;
+        if (github && !github.startsWith("http")) github = "https://" + github;
 
         sheet.getRange(j + 1, 1, 1, 11).setValues([[
           cName,
           email,
           phone,
-          exp,
           ug,
           pg,
           college,
+          gradYear,
           location,
           linkedin,
           github,

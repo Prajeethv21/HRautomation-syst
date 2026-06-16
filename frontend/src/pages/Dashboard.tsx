@@ -1,15 +1,12 @@
 import React, { useEffect, useState } from 'react';
-import { getCandidates, getDepartmentCandidates, type Candidate } from '../services/googleAppsScript';
+import { getCandidates, type Candidate } from '../services/googleAppsScript';
 import { Users, Clock, Send, UserCheck, ArrowRight, Building2 } from 'lucide-react';
 import { Link } from 'react-router-dom';
-import { motion } from 'framer-motion';
-import FlowingConnectionLines from '../components/ui/FlowingConnectionLines';
 import { DEPARTMENTS } from '../config/departments';
 
 const Dashboard: React.FC = () => {
   const [candidates, setCandidates] = useState<Candidate[]>([]);
   const [loading, setLoading] = useState(true);
-  const [loadingDepts, setLoadingDepts] = useState(true);
   const [deptStats, setDeptStats] = useState<Record<string, { total: number; selected: number; interviewing: number; onHold: number; rejected: number }>>({});
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
@@ -20,22 +17,17 @@ const Dashboard: React.FC = () => {
       const data = await getCandidates();
       setCandidates(data);
 
-      setLoadingDepts(true);
+      // Compute department stats locally from the master candidates list
       const statsMap: Record<string, { total: number; selected: number; interviewing: number; onHold: number; rejected: number }> = {};
       for (const dept of DEPARTMENTS) {
-        try {
-          const deptCandidates = await getDepartmentCandidates(dept.sheetName);
-          statsMap[dept.id] = {
-            total: deptCandidates.length,
-            selected: deptCandidates.filter(c => c.status === 'Selected').length,
-            interviewing: deptCandidates.filter(c => c.status === 'Interviewing').length,
-            onHold: deptCandidates.filter(c => c.status === 'On Hold').length,
-            rejected: deptCandidates.filter(c => c.status === 'Rejected').length
-          };
-        } catch (deptErr) {
-          console.error(`Error loading stats for ${dept.name}:`, deptErr);
-          statsMap[dept.id] = { total: 0, selected: 0, interviewing: 0, onHold: 0, rejected: 0 };
-        }
+        const deptCandidates = data.filter(c => dept.roles.includes(c.role));
+        statsMap[dept.id] = {
+          total: deptCandidates.length,
+          selected: deptCandidates.filter(c => c.status === 'Selected').length,
+          interviewing: deptCandidates.filter(c => c.status === 'Interviewing' || c.status === 'Submitted' || c.status === 'Shortlisted' || c.status === 'Scheduled').length,
+          onHold: deptCandidates.filter(c => c.status === 'On Hold').length,
+          rejected: deptCandidates.filter(c => c.status === 'Rejected').length
+        };
       }
       setDeptStats(statsMap);
     } catch (err: any) {
@@ -43,7 +35,6 @@ const Dashboard: React.FC = () => {
       setErrorMsg('Unable to connect to Google Sheets');
     } finally {
       setLoading(false);
-      setLoadingDepts(false);
     }
   };
 
@@ -62,7 +53,13 @@ const Dashboard: React.FC = () => {
   // Calculate stats from live Google Sheets data
   const totalCandidates = candidates.length;
   const pendingEmails = candidates.filter((c) => c.emailStatus === 'Pending').length;
-  const emailsSent = candidates.filter((c) => c.emailStatus === 'Sent').length;
+  // Fix Emails Sent metric bug: check if status contains "Sent" or is "Interview Scheduled"
+  const emailsSent = candidates.filter((c) => 
+    c.emailStatus && (
+      c.emailStatus.toLowerCase().includes('sent') || 
+      c.emailStatus === 'Interview Scheduled'
+    )
+  ).length;
   const selectedCandidates = candidates.filter((c) => c.status === 'Selected').length;
 
   const recentCandidates = [...candidates].slice(0, 5); // Display top 5
@@ -75,8 +72,7 @@ const Dashboard: React.FC = () => {
       iconBg: 'bg-[#EDF9E8] text-[#6FAF45] border border-[#D7F1C8]',
       badgeText: (
         <span className="flex items-center gap-1.5">
-          <span className="w-1.5 h-1.5 rounded-full bg-[#6FAF45] animate-pulse-dot" />
-
+          <span className="w-1.5 h-1.5 rounded-full bg-[#6FAF45]" />
         </span>
       ),
       badgeClass: 'bg-[#EDF9E8] text-[#6FAF45] border-[#D7F1C8]'
@@ -84,7 +80,6 @@ const Dashboard: React.FC = () => {
     {
       title: 'Pending Emails',
       value: pendingEmails,
-
       icon: Clock,
       iconBg: 'bg-[#FCFBF4] text-[#8B7D3A] border border-[#F3F0D3]',
       badgeText: pendingEmails > 0 ? 'Action Required' : 'All Sent',
@@ -111,12 +106,9 @@ const Dashboard: React.FC = () => {
   ];
 
   return (
-    <div className="space-y-8 relative z-10 animate-fade-in">
-      {/* Premium Hero Banner */}
+    <div className="space-y-8 relative z-10">
+      {/* Premium Hero Banner (Animations Removed) */}
       <div className="relative bg-gradient-to-br from-[#F8FFF6] via-[#EDF9E8] to-[#E6F7E2] rounded-3xl p-8 shadow-sm overflow-hidden border border-[#A8D672]/30">
-        {/* Connection flow lines animation */}
-        <FlowingConnectionLines />
-
         <div className="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-6">
           <div className="space-y-3 max-w-xl">
             <span className="text-xs uppercase font-extrabold tracking-wider text-[#6FAF45] select-none font-jakarta block">
@@ -152,7 +144,7 @@ const Dashboard: React.FC = () => {
         </div>
       )}
 
-      {/* Stats Cards Grid */}
+      {/* Stats Cards Grid (Animations and Framer Motion Removed) */}
       {loading ? (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
           {[...Array(4)].map((_, i) => (
@@ -170,16 +162,12 @@ const Dashboard: React.FC = () => {
         </div>
       ) : (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
-          {metrics.map((card, idx) => {
+          {metrics.map((card) => {
             const Icon = card.icon;
             return (
-              <motion.div
+              <div
                 key={card.title}
-                initial={{ opacity: 0, y: 12 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ duration: 0.3, delay: idx * 0.05 }}
-                whileHover={{ y: -4, scale: 1.01 }}
-                className="bg-white border border-brand-border p-6 rounded-2xl shadow-sm hover:shadow-[0_20px_40px_rgba(168,214,114,0.15)] hover:border-brand-accent/30 transition-all duration-300 flex flex-col justify-between cursor-pointer"
+                className="bg-white border border-brand-border p-6 rounded-2xl shadow-sm hover:shadow-md hover:border-brand-accent/25 hover:-translate-y-1 transition-all duration-300 flex flex-col justify-between cursor-pointer"
               >
                 <div className="flex justify-between items-start">
                   <div>
@@ -203,7 +191,7 @@ const Dashboard: React.FC = () => {
                     {card.badgeText}
                   </span>
                 </div>
-              </motion.div>
+              </div>
             );
           })}
         </div>
@@ -214,7 +202,7 @@ const Dashboard: React.FC = () => {
         <h2 className="text-base font-bold text-brand-text font-jakarta">
           Departments Directory
         </h2>
-        {loadingDepts ? (
+        {loading ? (
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
             {[...Array(3)].map((_, i) => (
               <div key={i} className="bg-white border border-brand-border p-6 rounded-2xl shadow-sm h-40 animate-pulse flex flex-col justify-between" />
@@ -222,16 +210,12 @@ const Dashboard: React.FC = () => {
           </div>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-            {DEPARTMENTS.map((dept, idx) => {
-              const stats = deptStats[dept.id] || { total: 0, selected: 0, rejected: 0, maybe: 0 };
+            {DEPARTMENTS.map((dept) => {
+              const stats = deptStats[dept.id] || { total: 0, selected: 0, interviewing: 0, onHold: 0, rejected: 0 };
               return (
                 <Link to={`/departments/${dept.id}`} key={dept.id}>
-                  <motion.div
-                    initial={{ opacity: 0, y: 12 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    transition={{ duration: 0.3, delay: idx * 0.05 }}
-                    whileHover={{ y: -4, scale: 1.01 }}
-                    className="bg-white border border-brand-border p-5 rounded-2xl shadow-sm hover:shadow-[0_20px_40px_rgba(168,214,114,0.15)] hover:border-brand-accent/30 transition-all duration-300 flex flex-col justify-between h-full select-none"
+                  <div
+                    className="bg-white border border-brand-border p-5 rounded-2xl shadow-sm hover:shadow-md hover:border-brand-accent/25 hover:-translate-y-1 transition-all duration-300 flex flex-col justify-between h-full select-none cursor-pointer"
                   >
                     <div className="flex justify-between items-start">
                       <div>
@@ -272,7 +256,7 @@ const Dashboard: React.FC = () => {
                         </div>
                       </div>
                     </div>
-                  </motion.div>
+                  </div>
                 </Link>
               );
             })}
@@ -311,12 +295,12 @@ const Dashboard: React.FC = () => {
                   </div>
                   <div className="flex items-center gap-3">
                     <span
-                      className={`text-[10px] font-bold px-2.5 py-1 rounded-full uppercase border ${candidate.emailStatus === 'Sent'
+                      className={`text-[10px] font-bold px-2.5 py-1 rounded-full uppercase border ${candidate.emailStatus && candidate.emailStatus.toLowerCase().includes('sent')
                         ? 'bg-green-50 text-green-700 border-green-100'
                         : 'bg-amber-50 text-amber-700 border-amber-100'
                         }`}
                     >
-                      {candidate.emailStatus}
+                      {candidate.emailStatus || 'Pending'}
                     </span>
                     <Link
                       to="/candidates"
