@@ -370,6 +370,8 @@ function onEdit(e) {
     // Trigger any side effects (like auto shortlist/review emails)
     triggerTransitionSideEffects(null, email, oldStatus, val);
   }
+}
+
 function formatSheetValue(val) {
   if (val === null || val === undefined) return "";
   if (typeof val === "object") {
