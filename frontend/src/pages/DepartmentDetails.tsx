@@ -1,12 +1,12 @@
 import React, { useEffect, useState, useMemo, useRef } from 'react';
 import { useParams, Link } from 'react-router-dom';
-import { 
+import {
   getDepartmentCandidates, sendJoiningLetter, sendRejectionEmail, sendInterviewEmail,
-  updateCandidateStatus, triggerResumeProcessing, uploadResumes, type DepartmentCandidate 
+  updateCandidateStatus, triggerResumeProcessing, uploadResumes, type DepartmentCandidate
 } from '../services/googleAppsScript';
 import { DEPARTMENTS } from '../config/departments';
-import { 
-  Users, CheckCircle, XCircle, Clock, Send, 
+import {
+  Users, CheckCircle, XCircle, Clock, Send,
   RefreshCw, Search, ExternalLink, ChevronRight, AlertCircle, Filter, Check, Eye,
   Upload
 } from 'lucide-react';
@@ -67,7 +67,7 @@ const DepartmentDetails: React.FC = () => {
   // Filters State
   const [statusFilter, setStatusFilter] = useState('');
   const [sourceFilter, setSourceFilter] = useState('');
-  
+
   // Custom Filter Popover state
   const [isFilterOpen, setIsFilterOpen] = useState(false);
   const [tempStatusFilter, setTempStatusFilter] = useState('');
@@ -88,7 +88,7 @@ const DepartmentDetails: React.FC = () => {
   // Selected candidate details modal state
   const [selectedCandidate, setSelectedCandidate] = useState<DepartmentCandidate | null>(null);
   const [isDetailsOpen, setIsDetailsOpen] = useState(false);
-  
+
   // Single action loading states (needed for modal actions)
   const [sendingLetterEmail, setSendingLetterEmail] = useState<string | null>(null);
   const [sendingRejectionEmail, setSendingRejectionEmail] = useState<string | null>(null);
@@ -151,7 +151,7 @@ const DepartmentDetails: React.FC = () => {
       try {
         setFileProgresses(prev => ({ ...prev, [file.name]: 60 }));
         const response = await uploadResumes([file], department.id, selectedSource);
-        
+
         if (response.success) {
           successCount++;
           setFileStatuses(prev => ({ ...prev, [file.name]: 'success' }));
@@ -196,7 +196,7 @@ const DepartmentDetails: React.FC = () => {
           setBulkProcessing(true);
           setProgressMsg('Triggering resume parser for successful uploads...');
           await triggerResumeProcessing();
-        } catch (_) {}
+        } catch (_) { }
         setBulkProcessing(false);
         setProgressMsg(null);
         fetchCandidatesData(true);
@@ -352,8 +352,8 @@ const DepartmentDetails: React.FC = () => {
 
 
 
-        return sortDirection === 'asc' 
-          ? valA.localeCompare(valB) 
+        return sortDirection === 'asc'
+          ? valA.localeCompare(valB)
           : valB.localeCompare(valA);
       });
     }
@@ -432,7 +432,7 @@ const DepartmentDetails: React.FC = () => {
 
     setBulkProcessing(true);
     let successCount = 0;
-    
+
     for (let i = 0; i < targets.length; i++) {
       const target = targets[i];
       setProgressMsg(`Sending letter ${i + 1}/${targets.length} to ${target.candidateName}...`);
@@ -657,11 +657,10 @@ const DepartmentDetails: React.FC = () => {
                   setTempSourceFilter(sourceFilter);
                 }
               }}
-              className={`flex items-center justify-center gap-2.5 px-4 h-10 border rounded-2xl text-sm font-semibold transition-all duration-200 select-none active:scale-[0.98] ${
-                isFilterOpen || statusFilter || sourceFilter
-                  ? 'bg-white border-brand text-brand shadow-sm font-bold'
-                  : 'bg-white border-brand-border text-gray-600 hover:border-brand/40'
-              }`}
+              className={`flex items-center justify-center gap-2.5 px-4 h-10 border rounded-2xl text-sm font-semibold transition-all duration-200 select-none active:scale-[0.98] ${isFilterOpen || statusFilter || sourceFilter
+                ? 'bg-white border-brand text-brand shadow-sm font-bold'
+                : 'bg-white border-brand-border text-gray-600 hover:border-brand/40'
+                }`}
             >
               <Filter className="w-4 h-4" />
               <span>Filters</span>
@@ -699,11 +698,10 @@ const DepartmentDetails: React.FC = () => {
                         <button
                           key={s.value}
                           onClick={() => setTempStatusFilter(s.value)}
-                          className={`w-full flex items-center justify-between px-3 py-1.5 rounded-xl text-xs font-semibold text-left transition-colors ${
-                            tempStatusFilter === s.value
-                              ? 'bg-[#EDF9E8] text-[#1B4332]'
-                              : 'text-gray-600 hover:bg-[#EDF9E8]/20'
-                          }`}
+                          className={`w-full flex items-center justify-between px-3 py-1.5 rounded-xl text-xs font-semibold text-left transition-colors ${tempStatusFilter === s.value
+                            ? 'bg-[#EDF9E8] text-[#1B4332]'
+                            : 'text-gray-600 hover:bg-[#EDF9E8]/20'
+                            }`}
                         >
                           <span className="flex items-center gap-2">
                             {s.dot && <span className={`w-2 h-2 rounded-full ${s.dot}`} />}
@@ -724,20 +722,18 @@ const DepartmentDetails: React.FC = () => {
                       {[
                         { label: 'All Sources', value: '' },
                         { label: 'LinkedIn', value: 'LinkedIn' },
-                        { label: 'Career Page', value: 'Career Page' },
                         { label: 'Referral', value: 'Referral' },
                         { label: 'Website', value: 'Website' },
-                        { label: 'Manual Entry', value: 'Manual Entry' },
+                        { label: 'Indeed', value: 'Indeed' },
                         { label: 'Other', value: 'Other' },
                       ].map((src) => (
                         <button
                           key={src.label}
                           onClick={() => setTempSourceFilter(src.value)}
-                          className={`w-full flex items-center justify-between px-3 py-1.5 rounded-xl text-xs font-semibold text-left transition-colors ${
-                            tempSourceFilter === src.value
-                              ? 'bg-[#EDF9E8] text-[#1B4332]'
-                              : 'text-gray-600 hover:bg-[#EDF9E8]/20'
-                          }`}
+                          className={`w-full flex items-center justify-between px-3 py-1.5 rounded-xl text-xs font-semibold text-left transition-colors ${tempSourceFilter === src.value
+                            ? 'bg-[#EDF9E8] text-[#1B4332]'
+                            : 'text-gray-600 hover:bg-[#EDF9E8]/20'
+                            }`}
                         >
                           <span>{src.label}</span>
                           {tempSourceFilter === src.value && <Check className="w-3.5 h-3.5 text-[#6FAF45]" />}
@@ -777,14 +773,13 @@ const DepartmentDetails: React.FC = () => {
               )}
             </AnimatePresence>
           </div>
-          
+
           <button
             onClick={() => handleBulkSendRejections()}
-            className={`inline-flex items-center justify-center gap-2 px-5 min-w-[140px] h-10 text-xs font-bold rounded-2xl border transition-all active:scale-[0.98] ${
-              selectedEmails.size > 0
-                ? 'bg-red-50 text-red-700 border-red-200 hover:bg-red-100/70'
-                : 'bg-gray-50 text-gray-400 border-gray-100 cursor-not-allowed opacity-50'
-            }`}
+            className={`inline-flex items-center justify-center gap-2 px-5 min-w-[140px] h-10 text-xs font-bold rounded-2xl border transition-all active:scale-[0.98] ${selectedEmails.size > 0
+              ? 'bg-red-50 text-red-700 border-red-200 hover:bg-red-100/70'
+              : 'bg-gray-50 text-gray-400 border-gray-100 cursor-not-allowed opacity-50'
+              }`}
             disabled={selectedEmails.size === 0 || bulkProcessing}
           >
             <XCircle className="w-3.5 h-3.5" />
@@ -793,11 +788,10 @@ const DepartmentDetails: React.FC = () => {
 
           <button
             onClick={handleBulkSendLetters}
-            className={`inline-flex items-center justify-center gap-2 px-5 min-w-[140px] h-10 text-xs font-bold rounded-2xl border transition-all active:scale-[0.98] ${
-              selectedEmails.size > 0
-                ? 'bg-[#6FAF45] text-white border-[#6FAF45] hover:bg-[#5f953a] shadow-sm'
-                : 'bg-gray-100 text-gray-400 border-gray-200 cursor-not-allowed opacity-60'
-            }`}
+            className={`inline-flex items-center justify-center gap-2 px-5 min-w-[140px] h-10 text-xs font-bold rounded-2xl border transition-all active:scale-[0.98] ${selectedEmails.size > 0
+              ? 'bg-[#6FAF45] text-white border-[#6FAF45] hover:bg-[#5f953a] shadow-sm'
+              : 'bg-gray-100 text-gray-400 border-gray-200 cursor-not-allowed opacity-60'
+              }`}
             disabled={selectedEmails.size === 0 || bulkProcessing}
           >
             <Send className="w-3.5 h-3.5" />
@@ -814,11 +808,10 @@ const DepartmentDetails: React.FC = () => {
               }
               setBulkStatusValue("");
             }}
-            className={`text-xs font-bold h-10 pl-3.5 pr-8 rounded-2xl border transition-colors cursor-pointer appearance-none bg-[url('data:image/svg+xml;charset=utf-8,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2020%2020%22%20fill%3D%22none%22%3E%3Cpath%20d%3D%22M7%209l3%203%203-3%22%20stroke%3D%22%234B5563%22%20stroke-width%3D%221.5%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%2F%3E%3C%2Fsvg%3E')] bg-[right_8px_center] bg-no-repeat bg-[length:14px_14px] ${
-              selectedEmails.size > 0 
-                ? 'border-brand text-brand hover:bg-[#EDF9E8]/30' 
-                : 'border-gray-200 text-gray-400 bg-gray-50 opacity-60 cursor-not-allowed'
-            }`}
+            className={`text-xs font-bold h-10 pl-3.5 pr-8 rounded-2xl border transition-colors cursor-pointer appearance-none bg-[url('data:image/svg+xml;charset=utf-8,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2020%2020%22%20fill%3D%22none%22%3E%3Cpath%20d%3D%22M7%209l3%203%203-3%22%20stroke%3D%22%234B5563%22%20stroke-width%3D%221.5%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%2F%3E%3C%2Fsvg%3E')] bg-[right_8px_center] bg-no-repeat bg-[length:14px_14px] ${selectedEmails.size > 0
+              ? 'border-brand text-brand hover:bg-[#EDF9E8]/30'
+              : 'border-gray-200 text-gray-400 bg-gray-50 opacity-60 cursor-not-allowed'
+              }`}
             disabled={selectedEmails.size === 0 || bulkProcessing}
           >
             <option value="" disabled hidden>Bulk Status Update...</option>
@@ -932,7 +925,7 @@ const DepartmentDetails: React.FC = () => {
           <div className="overflow-x-auto">
             <table className="w-full text-left border-collapse">
               <thead>
-                 <tr className="bg-brand-bg/40 border-b border-brand-border">
+                <tr className="bg-brand-bg/40 border-b border-brand-border">
                   <th className="pl-8 pr-4 py-4 w-10 text-left">
                     <input
                       type="checkbox"
@@ -954,11 +947,10 @@ const DepartmentDetails: React.FC = () => {
               </thead>
               <tbody className="divide-y divide-brand-border">
                 {filteredCandidates.map((candidate, idx) => (
-                  <tr 
-                    key={`${candidate.email}-${idx}`} 
-                    className={`hover:bg-brand-light/10 transition-colors duration-150 ${
-                      selectedEmails.has(candidate.email) ? 'bg-[#EDF9E8]/20' : ''
-                    }`}
+                  <tr
+                    key={`${candidate.email}-${idx}`}
+                    className={`hover:bg-brand-light/10 transition-colors duration-150 ${selectedEmails.has(candidate.email) ? 'bg-[#EDF9E8]/20' : ''
+                      }`}
                   >
                     <td className="pl-8 pr-4 py-4 whitespace-nowrap">
                       <input
@@ -1132,7 +1124,7 @@ const DepartmentDetails: React.FC = () => {
               <option value="LinkedIn">LinkedIn</option>
               <option value="Career Page">Career Page</option>
               <option value="Referral">Referral</option>
-              <option value="Manual Entry">Manual Entry</option>
+              <option value="Indeed">Indeed</option>
               <option value="Other">Other</option>
             </select>
           </div>
@@ -1215,7 +1207,7 @@ const DepartmentDetails: React.FC = () => {
                         <p className="text-[10px] text-gray-400 mt-0.5">
                           {(file.size / (1024 * 1024)).toFixed(2)} MB
                         </p>
-                        
+
                         {/* File upload progress bar */}
                         {status === 'uploading' && (
                           <div className="w-full bg-gray-200 h-1 rounded-full mt-2 overflow-hidden">
@@ -1240,7 +1232,7 @@ const DepartmentDetails: React.FC = () => {
                         {status === 'error' && (
                           <span className="text-[#C92A2A] font-bold bg-[#FFF5F5] px-2 py-0.5 rounded-lg border border-[#FFC9C9]">Failed</span>
                         )}
-                        
+
                         {!uploading && (
                           <button
                             onClick={() => {

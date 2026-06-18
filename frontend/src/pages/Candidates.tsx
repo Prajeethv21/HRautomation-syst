@@ -1,11 +1,11 @@
 import React, { useEffect, useState, useMemo, useRef } from 'react';
-import { 
+import {
   getCandidates, sendJoiningLetter, sendRejectionEmail, sendInterviewEmail,
-  updateCandidateStatus, triggerResumeProcessing, type Candidate 
+  updateCandidateStatus, triggerResumeProcessing, type Candidate
 } from '../services/googleAppsScript';
-import { 
-  Search, Filter, RefreshCw, Eye, Send, AlertCircle, Users, Check, 
-  Clock, XCircle, FileText 
+import {
+  Search, Filter, RefreshCw, Eye, Send, AlertCircle, Users, Check,
+  Clock, XCircle, FileText
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import Button from '../components/ui/Button';
@@ -164,8 +164,8 @@ const Candidates: React.FC = () => {
         }
         const valA = (a[sortField] || '').toString().toLowerCase();
         const valB = (b[sortField] || '').toString().toLowerCase();
-        return sortDirection === 'asc' 
-          ? valA.localeCompare(valB) 
+        return sortDirection === 'asc'
+          ? valA.localeCompare(valB)
           : valB.localeCompare(valA);
       });
     }
@@ -523,11 +523,10 @@ const Candidates: React.FC = () => {
                   setTempSourceFilter(sourceFilter);
                 }
               }}
-              className={`flex items-center justify-center gap-2.5 px-4 h-10 border rounded-2xl text-sm font-semibold transition-all duration-200 select-none active:scale-[0.98] ${
-                isFilterOpen || statusFilter || emailStatusFilter || sourceFilter
-                  ? 'bg-white border-brand text-brand shadow-sm font-bold'
-                  : 'bg-white border-brand-border text-gray-600 hover:border-brand/40'
-              }`}
+              className={`flex items-center justify-center gap-2.5 px-4 h-10 border rounded-2xl text-sm font-semibold transition-all duration-200 select-none active:scale-[0.98] ${isFilterOpen || statusFilter || emailStatusFilter || sourceFilter
+                ? 'bg-white border-brand text-brand shadow-sm font-bold'
+                : 'bg-white border-brand-border text-gray-600 hover:border-brand/40'
+                }`}
             >
               <Filter className="w-4 h-4" />
               <span>Filters</span>
@@ -565,11 +564,10 @@ const Candidates: React.FC = () => {
                         <button
                           key={s.value}
                           onClick={() => setTempStatusFilter(s.value)}
-                          className={`w-full flex items-center justify-between px-3 py-1.5 rounded-xl text-xs font-semibold text-left transition-colors ${
-                            tempStatusFilter === s.value
-                              ? 'bg-[#EDF9E8] text-[#1B4332]'
-                              : 'text-gray-600 hover:bg-[#EDF9E8]/20'
-                          }`}
+                          className={`w-full flex items-center justify-between px-3 py-1.5 rounded-xl text-xs font-semibold text-left transition-colors ${tempStatusFilter === s.value
+                            ? 'bg-[#EDF9E8] text-[#1B4332]'
+                            : 'text-gray-600 hover:bg-[#EDF9E8]/20'
+                            }`}
                         >
                           <span className="flex items-center gap-2">
                             {s.dot && <span className={`w-2 h-2 rounded-full ${s.dot}`} />}
@@ -590,20 +588,18 @@ const Candidates: React.FC = () => {
                       {[
                         { label: 'All Sources', value: '' },
                         { label: 'LinkedIn', value: 'LinkedIn' },
-                        { label: 'Career Page', value: 'Career Page' },
                         { label: 'Referral', value: 'Referral' },
                         { label: 'Website', value: 'Website' },
-                        { label: 'Manual Entry', value: 'Manual Entry' },
+                        { label: 'Indeed', value: 'Indeed' },
                         { label: 'Other', value: 'Other' },
                       ].map((src) => (
                         <button
                           key={src.label}
                           onClick={() => setTempSourceFilter(src.value)}
-                          className={`w-full flex items-center justify-between px-3 py-1.5 rounded-xl text-xs font-semibold text-left transition-colors ${
-                            tempSourceFilter === src.value
-                              ? 'bg-[#EDF9E8] text-[#1B4332]'
-                              : 'text-gray-600 hover:bg-[#EDF9E8]/20'
-                          }`}
+                          className={`w-full flex items-center justify-between px-3 py-1.5 rounded-xl text-xs font-semibold text-left transition-colors ${tempSourceFilter === src.value
+                            ? 'bg-[#EDF9E8] text-[#1B4332]'
+                            : 'text-gray-600 hover:bg-[#EDF9E8]/20'
+                            }`}
                         >
                           <span>{src.label}</span>
                           {tempSourceFilter === src.value && <Check className="w-3.5 h-3.5 text-[#6FAF45]" />}
@@ -626,11 +622,10 @@ const Candidates: React.FC = () => {
                         <button
                           key={s.label}
                           onClick={() => setTempEmailStatusFilter(s.value)}
-                          className={`w-full flex items-center justify-between px-3 py-1.5 rounded-xl text-xs font-semibold text-left transition-colors ${
-                            tempEmailStatusFilter === s.value
-                              ? 'bg-[#EDF9E8] text-[#1B4332]'
-                              : 'text-gray-600 hover:bg-[#EDF9E8]/20'
-                          }`}
+                          className={`w-full flex items-center justify-between px-3 py-1.5 rounded-xl text-xs font-semibold text-left transition-colors ${tempEmailStatusFilter === s.value
+                            ? 'bg-[#EDF9E8] text-[#1B4332]'
+                            : 'text-gray-600 hover:bg-[#EDF9E8]/20'
+                            }`}
                         >
                           <span>{s.label}</span>
                           {tempEmailStatusFilter === s.value && <Check className="w-3.5 h-3.5 text-[#6FAF45]" />}
@@ -772,17 +767,17 @@ const Candidates: React.FC = () => {
               </thead>
               <tbody className="divide-y divide-brand-border">
                 {[...Array(5)].map((_, i) => (
-                   <tr key={i} className="animate-pulse">
-                     <td className="px-6 py-4"><div className="w-4 h-4 bg-gray-200 rounded" /></td>
-                     <td className="px-6 py-4"><div className="h-4 bg-gray-200 rounded w-28" /></td>
-                     <td className="px-6 py-4"><div className="h-3 bg-gray-200 rounded w-36" /></td>
-                     <td className="px-6 py-4"><div className="h-3 bg-gray-200 rounded w-24" /></td>
-                     <td className="px-6 py-4"><div className="h-3 bg-gray-200 rounded w-20" /></td>
-                     <td className="px-6 py-4"><div className="h-5 bg-gray-200 rounded-full w-16" /></td>
-                     <td className="px-6 py-4"><div className="h-5 bg-gray-200 rounded-full w-14" /></td>
-                     <td className="px-6 py-4"><div className="h-5 bg-gray-200 rounded-full w-14" /></td>
-                     <td className="px-6 py-4 text-right flex justify-end gap-2"><div className="h-8 bg-gray-200 rounded-lg w-14" /><div className="h-8 bg-gray-200 rounded-lg w-24" /></td>
-                   </tr>
+                  <tr key={i} className="animate-pulse">
+                    <td className="px-6 py-4"><div className="w-4 h-4 bg-gray-200 rounded" /></td>
+                    <td className="px-6 py-4"><div className="h-4 bg-gray-200 rounded w-28" /></td>
+                    <td className="px-6 py-4"><div className="h-3 bg-gray-200 rounded w-36" /></td>
+                    <td className="px-6 py-4"><div className="h-3 bg-gray-200 rounded w-24" /></td>
+                    <td className="px-6 py-4"><div className="h-3 bg-gray-200 rounded w-20" /></td>
+                    <td className="px-6 py-4"><div className="h-5 bg-gray-200 rounded-full w-16" /></td>
+                    <td className="px-6 py-4"><div className="h-5 bg-gray-200 rounded-full w-14" /></td>
+                    <td className="px-6 py-4"><div className="h-5 bg-gray-200 rounded-full w-14" /></td>
+                    <td className="px-6 py-4 text-right flex justify-end gap-2"><div className="h-8 bg-gray-200 rounded-lg w-14" /><div className="h-8 bg-gray-200 rounded-lg w-24" /></td>
+                  </tr>
                 ))}
               </tbody>
             </table>
@@ -880,15 +875,14 @@ const Candidates: React.FC = () => {
                     </td>
 
                     <td className="px-4 py-4 whitespace-nowrap">
-                      <span className={`text-[10px] font-extrabold px-2.5 py-0.5 rounded-full uppercase border ${
-                        candidate.emailStatus && candidate.emailStatus.toLowerCase().includes('sent')
-                          ? 'bg-white text-green-700 border-green-300'
-                          : candidate.emailStatus === 'Interview Scheduled'
+                      <span className={`text-[10px] font-extrabold px-2.5 py-0.5 rounded-full uppercase border ${candidate.emailStatus && candidate.emailStatus.toLowerCase().includes('sent')
+                        ? 'bg-white text-green-700 border-green-300'
+                        : candidate.emailStatus === 'Interview Scheduled'
                           ? 'bg-white text-amber-700 border-amber-300'
                           : candidate.emailStatus === 'Failed'
-                          ? 'bg-white text-red-600 border-red-300'
-                          : 'bg-white text-gray-500 border-gray-200'
-                      }`}>
+                            ? 'bg-white text-red-600 border-red-300'
+                            : 'bg-white text-gray-500 border-gray-200'
+                        }`}>
                         {candidate.emailStatus || 'Pending'}
                       </span>
                     </td>
@@ -939,11 +933,10 @@ const Candidates: React.FC = () => {
                 <button
                   key={i}
                   onClick={() => setCurrentPage(i + 1)}
-                  className={`w-7 h-7 rounded-xl border transition-all duration-150 active:scale-[0.95] ${
-                    currentPage === i + 1
-                      ? 'bg-brand-primary text-white border-brand-primary font-extrabold'
-                      : 'border-brand-border bg-white hover:bg-brand-light text-gray-600'
-                  }`}
+                  className={`w-7 h-7 rounded-xl border transition-all duration-150 active:scale-[0.95] ${currentPage === i + 1
+                    ? 'bg-brand-primary text-white border-brand-primary font-extrabold'
+                    : 'border-brand-border bg-white hover:bg-brand-light text-gray-600'
+                    }`}
                 >
                   {i + 1}
                 </button>
