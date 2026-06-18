@@ -2,7 +2,7 @@
   "rewrites": [
     {
       "source": "/api/:path*",
-      "destination": "https://h-rautomation-syst.vercel.app/*"
+      "destination": "https://h-rautomation-syst.vercel.app/api/:path*"
     }
   ]
 }
