@@ -3,7 +3,7 @@ import multer from 'multer';
 import mammoth from 'mammoth';
 import { createRequire } from 'module';
 const require = createRequire(import.meta.url);
-const { PDFParse } = require('pdf-parse');
+const pdfParse = require('pdf-parse');
 
 import {
   fetchCandidates,
@@ -219,10 +219,8 @@ router.post('/resumes/upload', upload.array('resumes'), async (req, res) => {
 
         if (ext === 'pdf') {
           console.log(`[BACKEND] Extracting text from PDF: ${file.originalname}`);
-          const parser = new PDFParse({ data: file.buffer });
-          const pdfData = await parser.getText();
+          const pdfData = await pdfParse(file.buffer);
           extractedText = pdfData.text || '';
-          await parser.destroy();
         } else if (ext === 'txt') {
           extractedText = file.buffer.toString('utf-8');
         } else if (ext === 'docx') {
