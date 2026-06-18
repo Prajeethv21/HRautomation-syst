@@ -16,6 +16,13 @@ const DEPT_CACHE_TTL_MS = 30000; // 30 seconds per-department cache
 export function clearCandidatesCache() {
   candidatesCache = null;
   cacheTimestamp = 0;
+  // Clear department cache
+  for (const key in deptCandidatesCache) {
+    delete deptCandidatesCache[key];
+  }
+  for (const key in deptCacheTimestamps) {
+    delete deptCacheTimestamps[key];
+  }
 }
 
 function getCredentials() {
@@ -379,7 +386,7 @@ export async function repairCandidatesWorkflow() {
   }
 }
 
-export async function uploadResumeToDrive(fileBuffer, fileName, departmentId) {
+export async function uploadResumeToDrive(fileBuffer, fileName, departmentId, source = 'Website') {
   const { url, sheetId } = getCredentials();
   
   const deptMap = {
@@ -401,7 +408,8 @@ export async function uploadResumeToDrive(fileBuffer, fileName, departmentId) {
     sheetId: sheetId,
     fileData: fileData,
     fileName: fileName,
-    roleName: roleName
+    roleName: roleName,
+    source: source
   };
 
   console.log(`[BACKEND] Uploading resume ${fileName} for department/role: ${roleName}`);
@@ -427,5 +435,133 @@ export async function uploadResumeToDrive(fileBuffer, fileName, departmentId) {
     }
     throw new Error(`Failed to upload resume to Drive: ${error.message}`);
   }
+}
+
+export async function parseResumeTextWithLLM(text) {
+  const apiKey = process.env.GROQ_API_KEY;
+  if (!apiKey) {
+    throw new Error('GROQ_API_KEY is not configured on the backend server.');
+  }
+
+  const systemInstruction = "You are a precise resume parser. Your job is to extract candidate details from the full resume text and return ONLY valid JSON matching the exact requested schema.";
+
+  const userPrompt = "Requirements:\n\n" +
+    "1. Extract candidate details from the full resume text.\n" +
+    "2. Return ONLY valid JSON.\n" +
+    "3. Do not return explanations, markdown, or extra text.\n" +
+    "4. If a field is missing, return an empty string.\n" +
+    "5. Never guess information.\n" +
+    "6. Ignore certifications, courses, workshops, PUC, 12th, 10th, diploma, training programs, bootcamps, and professional summaries when extracting UG/PG information.\n\n" +
+    "Extraction Rules:\n\n" +
+    "NAME:\n" +
+    "* Extract the candidate's actual name.\n" +
+    "* Do not use section headings such as:\n" +
+    "  PROFESSIONAL EXPERIENCE\n" +
+    "  PROFILE\n" +
+    "  SUMMARY\n" +
+    "  RESUME\n" +
+    "  CURRICULUM VITAE\n" +
+    "  EDUCATION\n" +
+    "* Name should contain alphabetic words only.\n\n" +
+    "UG:\n" +
+    "* Extract only the undergraduate degree.\n" +
+    "* Examples:\n" +
+    "  B.E\n" +
+    "  B.Tech\n" +
+    "  B.Sc\n" +
+    "  BCA\n" +
+    "  B.Com\n" +
+    "  BA\n" +
+    "  BBA\n" +
+    "* Do not include college name.\n" +
+    "* Do not include dates.\n\n" +
+    "PG:\n" +
+    "* Extract only postgraduate degree.\n" +
+    "* Examples:\n" +
+    "  M.Tech\n" +
+    "  MBA\n" +
+    "  MCA\n" +
+    "  M.Sc\n" +
+    "  MS\n" +
+    "  MA\n" +
+    "* Do not include college name.\n" +
+    "* Do not include dates.\n" +
+    "* Ignore certifications and executive programs.\n\n" +
+    "COLLEGE:\n" +
+    "* Extract the primary college/university associated with the highest qualification.\n" +
+    "* Examples:\n" +
+    "  Dayananda Sagar University\n" +
+    "  MS Ramaiah Institute of Technology\n" +
+    "  BMS College of Engineering\n" +
+    "* Do not include dates.\n" +
+    "* Do not include degree names.\n\n" +
+    "LOCATION:\n" +
+    "* Extract candidate location only.\n" +
+    "* Examples:\n" +
+    "  Bangalore\n" +
+    "  Bengaluru\n" +
+    "  Hyderabad\n" +
+    "  Chennai\n" +
+    "* Do not extract college location.\n\n" +
+    "LINKEDIN:\n" +
+    "* Extract complete LinkedIn URL.\n" +
+    "* If hyperlink exists but text is hidden, extract actual URL if available.\n\n" +
+    "GITHUB:\n" +
+    "* Extract complete GitHub URL.\n" +
+    "\n" +
+    "EMAIL:\n" +
+    "* Extract primary email.\n" +
+    "\n" +
+    "PHONE:\n" +
+    "* Extract primary phone number.\n" +
+    "\n" +
+    "Return JSON in EXACT format:\n\n" +
+    "{\n" +
+    "\"name\": \"\",\n" +
+    "\"email\": \"\",\n" +
+    "\"phone\": \"\",\n" +
+    "\"ug\": \"\",\n" +
+    "\"pg\": \"\",\n" +
+    "\"college\": \"\",\n" +
+    "\"location\": \"\",\n" +
+    "\"linkedin\": \"\",\n" +
+    "\"github\": \"\"\n" +
+    "}\n\n" +
+    "Resume Text:\n" + text;
+
+  const models = ["llama-3.3-70b-versatile", "llama-3.1-8b-instant", "llama3-70b-8192", "mixtral-8x7b-32768"];
+  let lastError = null;
+
+  for (const modelName of models) {
+    try {
+      console.log(`[BACKEND] Trying Groq LLM parsing with model: ${modelName}`);
+      const response = await axios.post('https://api.groq.com/openai/v1/chat/completions', {
+        model: modelName,
+        messages: [
+          { role: 'system', content: systemInstruction },
+          { role: 'user', content: userPrompt }
+        ],
+        temperature: 0.1,
+        response_format: { type: 'json_object' }
+      }, {
+        headers: {
+          'Authorization': `Bearer ${apiKey}`,
+          'Content-Type': 'application/json'
+        },
+        timeout: 15000
+      });
+
+      if (response.status === 200 && response.data?.choices?.[0]?.message?.content) {
+        console.log(`[BACKEND] Groq LLM parsed successfully using ${modelName}`);
+        const parsedContent = JSON.parse(response.data.choices[0].message.content.trim());
+        return parsedContent;
+      }
+    } catch (err) {
+      console.warn(`[BACKEND] Groq parsing failed for model ${modelName}:`, err.message);
+      lastError = err;
+    }
+  }
+
+  throw new Error(`All Groq models failed to parse the resume. Last error: ${lastError?.message}`);
 }
 

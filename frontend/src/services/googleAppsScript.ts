@@ -300,10 +300,11 @@ export const triggerResumeProcessing = async (): Promise<{ success: boolean; mes
   }
 };
 
-export const uploadResumes = async (files: File[], departmentId: string): Promise<{ success: boolean; message: string; results?: any[] }> => {
+export const uploadResumes = async (files: File[], departmentId: string, source: string = 'Website'): Promise<{ success: boolean; message: string; results?: any[] }> => {
   try {
     const formData = new FormData();
     formData.append('departmentId', departmentId);
+    formData.append('source', source);
     files.forEach((file) => {
       formData.append('resumes', file);
     });

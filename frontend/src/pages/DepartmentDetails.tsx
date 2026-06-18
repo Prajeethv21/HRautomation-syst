@@ -19,21 +19,21 @@ import Modal from '../components/ui/Modal';
 const getStatusBadgeClass = (status: string) => {
   switch (status) {
     case 'Submitted':
-      return 'bg-gray-50 text-gray-700 border-gray-100';
+      return 'bg-white text-gray-800 border-gray-200';
     case 'Shortlisted':
-      return 'bg-[#F4F9EC] text-[#2D6A2D] border-[#8CC63F]/20';
+      return 'bg-white text-gray-800 border-brand/50';
     case 'Scheduled':
-      return 'bg-[#FEF9E7] text-[#B7950B] border-[#F9E79F]';
+      return 'bg-white text-gray-800 border-amber-300';
     case 'Interviewing':
-      return 'bg-[#F4F9EC] text-[#1B4332] border-[#8CC63F]/20';
+      return 'bg-white text-gray-800 border-brand/50';
     case 'Selected':
-      return 'bg-[#EDF9E8] text-[#2D6A2D] border-[#D7F1C8]';
+      return 'bg-white text-gray-800 border-green-400';
     case 'Rejected':
-      return 'bg-[#FFF5F5] text-[#C92A2A] border-[#FFC9C9]';
+      return 'bg-white text-gray-800 border-red-300';
     case 'On Hold':
-      return 'bg-[#FEF9E7] text-[#B7950B] border-[#F9E79F]';
+      return 'bg-white text-gray-800 border-amber-300';
     default:
-      return 'bg-[#F4F7F5] text-gray-500 border-[#E3ECE6]';
+      return 'bg-white text-gray-800 border-gray-200';
   }
 };
 
@@ -42,6 +42,7 @@ const SHEET_STATUS_OPTIONS = [
   'Submitted',
   'Shortlisted',
   'Scheduled',
+  'Interviewing',
   'On Hold',
   'Selected',
   'Rejected'
@@ -105,6 +106,7 @@ const DepartmentDetails: React.FC = () => {
   const [uploading, setUploading] = useState(false);
   const [fileProgresses, setFileProgresses] = useState<{ [key: string]: number }>({});
   const [fileStatuses, setFileStatuses] = useState<{ [key: string]: 'pending' | 'uploading' | 'success' | 'error' }>({});
+  const [selectedSource, setSelectedSource] = useState<string>('Website');
 
   const handleFileSelection = (files: File[]) => {
     const allowedExtensions = ['pdf', 'doc', 'docx'];
@@ -148,7 +150,7 @@ const DepartmentDetails: React.FC = () => {
 
       try {
         setFileProgresses(prev => ({ ...prev, [file.name]: 60 }));
-        const response = await uploadResumes([file], department.id);
+        const response = await uploadResumes([file], department.id, selectedSource);
         
         if (response.success) {
           successCount++;
@@ -367,10 +369,10 @@ const DepartmentDetails: React.FC = () => {
 
   // Header stats structure
   const statsMetrics = [
-    { title: 'Total Candidates', value: totalCandidates, icon: Users, iconBg: 'bg-[#EDF9E8] text-[#6FAF45] border border-[#D7F1C8]' },
-    { title: 'Selected', value: selectedCandidates, icon: CheckCircle, iconBg: 'bg-[#F4FAF1] text-[#4E8B3A] border border-[#D9ECCB]' },
-    { title: 'Rejected', value: rejectedCandidates, icon: XCircle, iconBg: 'bg-[#FFF5F5] text-[#C92A2A] border border-[#FFC9C9]' },
-    { title: 'On Hold', value: onHoldCandidates, icon: Clock, iconBg: 'bg-[#FFFBEB] text-[#92400E] border border-[#FDE68A]' }
+    { title: 'Total Candidates', value: totalCandidates, icon: Users },
+    { title: 'Selected', value: selectedCandidates, icon: CheckCircle },
+    { title: 'Rejected', value: rejectedCandidates, icon: XCircle },
+    { title: 'On Hold', value: onHoldCandidates, icon: Clock }
   ];
 
   // Selection handlers
@@ -592,6 +594,9 @@ const DepartmentDetails: React.FC = () => {
       <div className="flex items-center gap-2 text-xs font-semibold text-gray-400 select-none">
         <Link to="/dashboard" className="hover:text-brand transition-colors">Dashboard</Link>
         <ChevronRight className="w-3.5 h-3.5" />
+        {department.id === 'sustainability' && (
+          <img src="/favicon.png" className="w-5 h-5 object-contain shrink-0" alt="Leaf Logo" />
+        )}
         <span className="text-gray-600">{department.name}</span>
       </div>
 
@@ -609,7 +614,7 @@ const DepartmentDetails: React.FC = () => {
             return (
               <div
                 key={card.title}
-                className="bg-white border border-[#E5E7EB] p-6 rounded-2xl shadow-sm flex items-center justify-between h-[108px] hover:border-[#8CC63F]/40 hover:shadow-sm transition-all duration-200"
+                className="bg-white border border-[#E5E7EB] p-6 rounded-2xl shadow-sm flex items-center justify-between h-[108px] hover:border-brand hover:shadow-sm transition-all duration-200"
               >
                 <div className="space-y-1">
                   <span className="text-xs font-semibold text-gray-400 uppercase tracking-wider font-jakarta block">
@@ -619,9 +624,7 @@ const DepartmentDetails: React.FC = () => {
                     {card.value}
                   </h3>
                 </div>
-                <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${card.iconBg}`}>
-                  <Icon className="w-5 h-5" />
-                </div>
+                <Icon className="w-6 h-6 text-brand shrink-0" />
               </div>
             );
           })}
@@ -638,7 +641,7 @@ const DepartmentDetails: React.FC = () => {
             placeholder="Search by name, email, college, degree..."
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            className="w-full h-10 text-sm pl-10 pr-4 bg-[#EDF9E8]/15 border border-[#E5E7EB] rounded-2xl focus:border-[#6FAF45]/40 text-brand-text placeholder-gray-400 font-medium"
+            className="w-full h-10 text-sm pl-10 pr-4 bg-white border border-[#E5E7EB] rounded-2xl focus:border-brand/40 text-brand-text placeholder-gray-400 font-medium"
           />
         </div>
 
@@ -656,8 +659,8 @@ const DepartmentDetails: React.FC = () => {
               }}
               className={`flex items-center justify-center gap-2.5 px-4 h-10 border rounded-2xl text-sm font-semibold transition-all duration-200 select-none active:scale-[0.98] ${
                 isFilterOpen || statusFilter || sourceFilter
-                  ? 'bg-[#EDF9E8] border-[#A8D672]/50 text-[#1B4332] shadow-sm font-bold'
-                  : 'bg-white border-brand-border text-gray-600 hover:bg-[#EDF9E8]/35'
+                  ? 'bg-white border-brand text-brand shadow-sm font-bold'
+                  : 'bg-white border-brand-border text-gray-600 hover:border-brand/40'
               }`}
             >
               <Filter className="w-4 h-4" />
@@ -904,16 +907,16 @@ const DepartmentDetails: React.FC = () => {
               <tbody className="divide-y divide-brand-border">
                 {[...Array(4)].map((_, i) => (
                   <tr key={i} className="animate-pulse">
-                    <td className="px-6 py-4.5"><div className="w-4 h-4 bg-gray-200 rounded" /></td>
-                    <td className="px-6 py-4.5"><div className="h-4 bg-gray-200 rounded w-28" /></td>
-                    <td className="px-6 py-4.5"><div className="h-3 bg-gray-200 rounded w-36" /></td>
-                    <td className="px-6 py-4.5"><div className="h-3 bg-gray-200 rounded w-24" /></td>
-                    <td className="px-6 py-4.5"><div className="h-3 bg-gray-200 rounded w-16" /></td>
-                    <td className="px-6 py-4.5"><div className="h-3 bg-gray-200 rounded w-28" /></td>
-                    <td className="px-6 py-4.5"><div className="h-3 bg-gray-200 rounded w-20" /></td>
-                    <td className="px-6 py-4.5"><div className="h-3 bg-gray-200 rounded w-14" /></td>
-                    <td className="px-6 py-4.5"><div className="h-5 bg-gray-200 rounded-full w-20" /></td>
-                    <td className="px-6 py-4.5 text-right flex justify-end gap-2"><div className="h-8 bg-gray-200 rounded-lg w-14" /><div className="h-8 bg-gray-200 rounded-lg w-24" /></td>
+                    <td className="px-6 py-4"><div className="w-4 h-4 bg-gray-200 rounded" /></td>
+                    <td className="px-6 py-4"><div className="h-4 bg-gray-200 rounded w-28" /></td>
+                    <td className="px-6 py-4"><div className="h-3 bg-gray-200 rounded w-36" /></td>
+                    <td className="px-6 py-4"><div className="h-3 bg-gray-200 rounded w-24" /></td>
+                    <td className="px-6 py-4"><div className="h-3 bg-gray-200 rounded w-16" /></td>
+                    <td className="px-6 py-4"><div className="h-3 bg-gray-200 rounded w-28" /></td>
+                    <td className="px-6 py-4"><div className="h-3 bg-gray-200 rounded w-20" /></td>
+                    <td className="px-6 py-4"><div className="h-3 bg-gray-200 rounded w-14" /></td>
+                    <td className="px-6 py-4"><div className="h-5 bg-gray-200 rounded-full w-20" /></td>
+                    <td className="px-6 py-4 text-right flex justify-end gap-2"><div className="h-8 bg-gray-200 rounded-lg w-14" /><div className="h-8 bg-gray-200 rounded-lg w-24" /></td>
                   </tr>
                 ))}
               </tbody>
@@ -1107,12 +1110,33 @@ const DepartmentDetails: React.FC = () => {
             setUploadFiles([]);
             setFileProgresses({});
             setFileStatuses({});
+            setSelectedSource('Website');
           }
         }}
         title={`Upload Resumes - ${department.name}`}
         size="lg"
       >
         <div className="space-y-6">
+          {/* Source Selector */}
+          <div className="space-y-2">
+            <label htmlFor="upload-source-select" className="text-xs font-bold text-gray-500 uppercase tracking-wider block font-jakarta">
+              Candidate Source
+            </label>
+            <select
+              id="upload-source-select"
+              value={selectedSource}
+              onChange={(e) => setSelectedSource(e.target.value)}
+              className="w-full text-xs font-bold py-2.5 pl-3.5 pr-8 rounded-2xl border border-brand-border bg-white text-gray-600 focus:outline-none focus:ring-2 focus:ring-[#6FAF45]/50 transition-colors cursor-pointer appearance-none bg-[url('data:image/svg+xml;charset=utf-8,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2020%2020%22%20fill%3D%22none%22%3E%3Cpath%20d%3D%22M7%209l3%203%203-3%22%20stroke%3D%22%234B5563%22%20stroke-width%3D%221.5%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%2F%3E%3C%2Fsvg%3E')] bg-[right_12px_center] bg-no-repeat bg-[length:14px_14px]"
+            >
+              <option value="Website">Website</option>
+              <option value="LinkedIn">LinkedIn</option>
+              <option value="Career Page">Career Page</option>
+              <option value="Referral">Referral</option>
+              <option value="Manual Entry">Manual Entry</option>
+              <option value="Other">Other</option>
+            </select>
+          </div>
+
           {/* Drag & Drop Area */}
           <div
             onDragOver={(e) => {
@@ -1247,6 +1271,7 @@ const DepartmentDetails: React.FC = () => {
                 setUploadFiles([]);
                 setFileProgresses({});
                 setFileStatuses({});
+                setSelectedSource('Website');
               }}
               disabled={uploading}
               className="active:scale-[0.98]"

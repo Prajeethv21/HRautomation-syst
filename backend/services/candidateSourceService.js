@@ -31,14 +31,15 @@ export class BaseCandidateSource {
       joiningDate: candidate.joiningDate || '',
       status: candidate.status || 'Interviewing',
       emailStatus: candidate.emailStatus || 'Pending',
-      source: this.sourceName,
+      source: candidate.source || this.sourceName,
       phoneNumber: candidate.phoneNumber || '',
       ug: candidate.ug || '',
       pg: candidate.pg || '',
       college: candidate.college || '',
       location: candidate.location || '',
       linkedin: candidate.linkedin || '',
-      github: candidate.github || ''
+      github: candidate.github || '',
+      resumeFileId: candidate.resumeFileId || ''
     };
   }
 }

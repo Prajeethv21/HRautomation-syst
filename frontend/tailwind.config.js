@@ -8,11 +8,11 @@ export default {
     extend: {
       colors: {
         brand: {
-          light: '#F4F9EC',       // Soft yellow-green bg tint
-          DEFAULT: '#8CC63F',     // Vibrant yellow-green logo color
+          light: '#F7FAF4',       // Sleek light brand green-tint
+          DEFAULT: '#91ba30',     // Premium green from the 2nd image
           primary: '#111111',     // Rich black
           secondary: '#333333',   // Charcoal grey
-          accent: '#A6D763',      // Soft yellow-green accent
+          accent: '#e7d801',      // Radiant logo yellow/lime
           text: '#111111',        // Rich dark charcoal text
           bg: '#FFFFFF',          // Clean white canvas bg
           border: '#E5E7EB'       // Subtle light gray border

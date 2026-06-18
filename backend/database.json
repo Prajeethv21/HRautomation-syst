@@ -1,0 +1,433 @@
+{
+  "users": [
+    {
+      "id": "75osgxq3vq815vwfvtgjg3",
+      "name": "Anbunathan",
+      "email": "prajeethv.deepwoods@gmail.com",
+      "passwordHash": "$2a$10$TUUKv4B5.Var6jtp0JZ7fepibMC19mmTYQwkjO0tpozF3JrcBI9ji",
+      "role": "ADMIN",
+      "status": "APPROVED",
+      "expiryDate": null,
+      "createdAt": "2026-06-16T19:00:30.525Z"
+    },
+    {
+      "id": "6xhh15ywh44qfb588pt749",
+      "name": "Prajeeth",
+      "email": "prajeethv100@gmail.com",
+      "passwordHash": "$2a$10$YodFZpfyvJIHnqxAE5S/ueOjqe4t0pQYd2Oen11i6pQIuabY0ymY2",
+      "role": "HR",
+      "status": "APPROVED",
+      "expiryDate": "2026-07-16T19:06:59.759Z",
+      "createdAt": "2026-06-16T19:02:41.697Z"
+    },
+    {
+      "id": "j3xpixoocjclmms01ykl1",
+      "name": "likith ",
+      "email": "prajeethv18@gmail.com",
+      "passwordHash": "$2a$10$rVaPIOBL81BX1LxF8uS68.RhdDJW76sx7563qCWaPm8s0.ZP0utuO",
+      "role": "HR",
+      "status": "DISABLED",
+      "expiryDate": "2026-07-17T13:34:55.738Z",
+      "createdAt": "2026-06-17T13:30:39.484Z"
+    }
+  ],
+  "sessions": [
+    {
+      "id": "d1ln09qiocn",
+      "userId": "6xhh15ywh44qfb588pt749",
+      "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VySWQiOiI2eGhoMTV5d2g0NHFmYjU4OHB0NzQ5IiwiaWF0IjoxNzgxNjM2ODI1LCJleHAiOjE3ODE3MjMyMjV9.EtclwqRmy9YrRgDzPKK4LxLF-0UNWxc8uHddjzRIXKE",
+      "expiresAt": "2026-06-17T19:07:05.772Z",
+      "createdAt": "2026-06-16T19:07:05.772Z"
+    },
+    {
+      "id": "kjclvkv546",
+      "userId": "6xhh15ywh44qfb588pt749",
+      "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VySWQiOiI2eGhoMTV5d2g0NHFmYjU4OHB0NzQ5IiwiaWF0IjoxNzgxNjcyODI1LCJleHAiOjE3ODE3NTkyMjV9.dHS2Y1IN1TXFzvuf_-1KU1Ya9JjNEkMRbSCTmS4vfZM",
+      "expiresAt": "2026-06-18T05:07:05.841Z",
+      "createdAt": "2026-06-17T05:07:05.841Z"
+    },
+    {
+      "id": "ruzjmyxmakp",
+      "userId": "75osgxq3vq815vwfvtgjg3",
+      "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VySWQiOiI3NW9zZ3hxM3ZxODE1dndmdnRnamczIiwiaWF0IjoxNzgxNjczMTgwLCJleHAiOjE3ODE3NTk1ODB9.JIRpCz6ZTyh4a7UTsdr0Vc1qAN9OfeFmUWABRohGuEI",
+      "expiresAt": "2026-06-18T05:13:00.005Z",
+      "createdAt": "2026-06-17T05:13:00.005Z"
+    },
+    {
+      "id": "y8orrbo4lq",
+      "userId": "75osgxq3vq815vwfvtgjg3",
+      "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VySWQiOiI3NW9zZ3hxM3ZxODE1dndmdnRnamczIiwiaWF0IjoxNzgxNjczMjA3LCJleHAiOjE3ODE3NTk2MDd9.VRGYXkeb7OgxPtI7HYghrZe_EqD1mK3wVDT7r5iyGrU",
+      "expiresAt": "2026-06-18T05:13:27.314Z",
+      "createdAt": "2026-06-17T05:13:27.314Z"
+    },
+    {
+      "id": "pg2lqek622g",
+      "userId": "75osgxq3vq815vwfvtgjg3",
+      "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VySWQiOiI3NW9zZ3hxM3ZxODE1dndmdnRnamczIiwiaWF0IjoxNzgxNjc0NzU2LCJleHAiOjE3ODE3NjExNTZ9.wWBunXsM-lToZDUqy_OVSs4_HU_nUKaxLL3xw479UFU",
+      "expiresAt": "2026-06-18T05:39:16.266Z",
+      "createdAt": "2026-06-17T05:39:16.266Z"
+    },
+    {
+      "id": "g7xpfazd975",
+      "userId": "75osgxq3vq815vwfvtgjg3",
+      "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VySWQiOiI3NW9zZ3hxM3ZxODE1dndmdnRnamczIiwiaWF0IjoxNzgxNjc1MTI2LCJleHAiOjE3ODE3NjE1MjZ9.CVu37b4oeiIWIOLIUDc0RWLn8XcTiJyJyk3KuXyj7Mg",
+      "expiresAt": "2026-06-18T05:45:26.350Z",
+      "createdAt": "2026-06-17T05:45:26.350Z"
+    },
+    {
+      "id": "nu60c3222q",
+      "userId": "75osgxq3vq815vwfvtgjg3",
+      "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VySWQiOiI3NW9zZ3hxM3ZxODE1dndmdnRnamczIiwiaWF0IjoxNzgxNjc2MzYzLCJleHAiOjE3ODE3NjI3NjN9.PFRoxIbv1THioOTa17F96ipyzGWbhHQMBvKJJCLEMxU",
+      "expiresAt": "2026-06-18T06:06:03.318Z",
+      "createdAt": "2026-06-17T06:06:03.318Z"
+    },
+    {
+      "id": "juu0ez60jgi",
+      "userId": "75osgxq3vq815vwfvtgjg3",
+      "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VySWQiOiI3NW9zZ3hxM3ZxODE1dndmdnRnamczIiwiaWF0IjoxNzgxNjk3NzgxLCJleHAiOjE3ODE3ODQxODF9.Ut-CDmjEoXQHPZDQ_TKtISEwQyGKQE-UF6V3lNBm56E",
+      "expiresAt": "2026-06-18T12:03:01.729Z",
+      "createdAt": "2026-06-17T12:03:01.730Z"
+    },
+    {
+      "id": "ns7epd638pg",
+      "userId": "75osgxq3vq815vwfvtgjg3",
+      "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VySWQiOiI3NW9zZ3hxM3ZxODE1dndmdnRnamczIiwiaWF0IjoxNzgxNjk3ODA5LCJleHAiOjE3ODE3ODQyMDl9.75uIKsLauNLOYSubA-NYaWikqot6eZwKgbAKaPGC9C8",
+      "expiresAt": "2026-06-18T12:03:29.070Z",
+      "createdAt": "2026-06-17T12:03:29.070Z"
+    },
+    {
+      "id": "kuqcxsaim9e",
+      "userId": "75osgxq3vq815vwfvtgjg3",
+      "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VySWQiOiI3NW9zZ3hxM3ZxODE1dndmdnRnamczIiwiaWF0IjoxNzgxNjk4Mzc1LCJleHAiOjE3ODE3ODQ3NzV9.t4bmipkzCj1jldoeMuqJ0HG17guMyZJrcRNVwAR6SRY",
+      "expiresAt": "2026-06-18T12:12:55.282Z",
+      "createdAt": "2026-06-17T12:12:55.282Z"
+    },
+    {
+      "id": "p7s6bjckir",
+      "userId": "75osgxq3vq815vwfvtgjg3",
+      "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VySWQiOiI3NW9zZ3hxM3ZxODE1dndmdnRnamczIiwiaWF0IjoxNzgxNjk4NzAxLCJleHAiOjE3ODE3ODUxMDF9._ZaOicrOrV_KSpI5Miibb-Xjenjdzf_jvRV5mpqrJ8Y",
+      "expiresAt": "2026-06-18T12:18:21.835Z",
+      "createdAt": "2026-06-17T12:18:21.835Z"
+    }
+  ],
+  "auditLogs": [
+    {
+      "id": "8umhjnp",
+      "userEmail": "prajeethv.deepwoods@gmail.com",
+      "action": "User Registration",
+      "timestamp": "2026-06-16T19:00:30.529Z"
+    },
+    {
+      "id": "ur422b2",
+      "userEmail": "prajeethv.deepwoods@gmail.com",
+      "action": "User Login",
+      "timestamp": "2026-06-16T19:00:37.546Z"
+    },
+    {
+      "id": "x2zbyuf",
+      "userEmail": "prajeethv100@gmail.com",
+      "action": "User Registration",
+      "timestamp": "2026-06-16T19:02:41.700Z"
+    },
+    {
+      "id": "yd7ctw2",
+      "userEmail": "prajeethv100@gmail.com",
+      "action": "User Approval",
+      "timestamp": "2026-06-16T19:05:13.992Z"
+    },
+    {
+      "id": "xmluk6q",
+      "userEmail": "prajeethv100@gmail.com",
+      "action": "User Approval",
+      "timestamp": "2026-06-16T19:06:10.878Z"
+    },
+    {
+      "id": "z204a2o",
+      "userEmail": "prajeethv100@gmail.com",
+      "action": "User Approval",
+      "timestamp": "2026-06-16T19:06:59.762Z"
+    },
+    {
+      "id": "xnph07k",
+      "userEmail": "prajeethv100@gmail.com",
+      "action": "User Login",
+      "timestamp": "2026-06-16T19:07:05.776Z"
+    },
+    {
+      "id": "tir1cru",
+      "userEmail": "prajeethv.deepwoods@gmail.com",
+      "action": "User Logout",
+      "timestamp": "2026-06-17T03:28:42.968Z"
+    },
+    {
+      "id": "fmxcj5n",
+      "userEmail": "prajeethv.deepwoods@gmail.com",
+      "action": "User Login",
+      "timestamp": "2026-06-17T03:32:20.218Z"
+    },
+    {
+      "id": "b02v5d0",
+      "userEmail": "prajeethv.deepwoods@gmail.com",
+      "action": "User Logout",
+      "timestamp": "2026-06-17T04:52:20.521Z"
+    },
+    {
+      "id": "c69ol53",
+      "userEmail": "prajeethv.deepwoods@gmail.com",
+      "action": "User Login",
+      "timestamp": "2026-06-17T04:52:26.194Z"
+    },
+    {
+      "id": "lbop5ta",
+      "userEmail": "prajeethv.deepwoods@gmail.com",
+      "action": "User Logout",
+      "timestamp": "2026-06-17T04:52:32.661Z"
+    },
+    {
+      "id": "ybolnqu",
+      "userEmail": "prajeethv.deepwoods@gmail.com",
+      "action": "User Login",
+      "timestamp": "2026-06-17T04:52:33.619Z"
+    },
+    {
+      "id": "p1hf4mb",
+      "userEmail": "prajeethv.deepwoods@gmail.com",
+      "action": "User Logout",
+      "timestamp": "2026-06-17T04:54:00.609Z"
+    },
+    {
+      "id": "knm1bu8",
+      "userEmail": "prajeethv.deepwoods@gmail.com",
+      "action": "User Login",
+      "timestamp": "2026-06-17T04:54:02.493Z"
+    },
+    {
+      "id": "qnv0tpb",
+      "userEmail": "prajeethv.deepwoods@gmail.com",
+      "action": "User Logout",
+      "timestamp": "2026-06-17T05:05:44.230Z"
+    },
+    {
+      "id": "vwm4bmf",
+      "userEmail": "prajeethv100@gmail.com",
+      "action": "User Login",
+      "timestamp": "2026-06-17T05:07:05.872Z"
+    },
+    {
+      "id": "oyqc7uz",
+      "userEmail": "prajeethv.deepwoods@gmail.com",
+      "action": "User Login",
+      "timestamp": "2026-06-17T05:13:00.012Z"
+    },
+    {
+      "id": "65eopxt",
+      "userEmail": "prajeethv.deepwoods@gmail.com",
+      "action": "User Login",
+      "timestamp": "2026-06-17T05:13:27.319Z"
+    },
+    {
+      "id": "mfkfufl",
+      "userEmail": "prajeethv.deepwoods@gmail.com",
+      "action": "User Login",
+      "timestamp": "2026-06-17T05:39:16.270Z"
+    },
+    {
+      "id": "6hjnxlt",
+      "userEmail": "prajeethv.deepwoods@gmail.com",
+      "action": "User Login",
+      "timestamp": "2026-06-17T05:45:26.362Z"
+    },
+    {
+      "id": "k7vnufr",
+      "userEmail": "prajeethv.deepwoods@gmail.com",
+      "action": "User Login",
+      "timestamp": "2026-06-17T06:06:03.323Z"
+    },
+    {
+      "id": "yn55wup",
+      "userEmail": "prajeethv.deepwoods@gmail.com",
+      "action": "User Login",
+      "timestamp": "2026-06-17T12:03:01.735Z"
+    },
+    {
+      "id": "t3l5loo",
+      "userEmail": "prajeethv.deepwoods@gmail.com",
+      "action": "User Login",
+      "timestamp": "2026-06-17T12:03:29.075Z"
+    },
+    {
+      "id": "n6s8090",
+      "userEmail": "prajeethv.deepwoods@gmail.com",
+      "action": "User Login",
+      "timestamp": "2026-06-17T12:12:55.334Z"
+    },
+    {
+      "id": "t5r7nnh",
+      "userEmail": "prajeethv.deepwoods@gmail.com",
+      "action": "User Login",
+      "timestamp": "2026-06-17T12:18:21.840Z"
+    },
+    {
+      "id": "nogi7dy",
+      "userEmail": "prajeethv18@gmail.com",
+      "action": "User Registration",
+      "timestamp": "2026-06-17T13:30:39.492Z"
+    },
+    {
+      "id": "himuodj",
+      "userEmail": "prajeethv18@gmail.com",
+      "action": "User Approval",
+      "timestamp": "2026-06-17T13:34:55.757Z"
+    },
+    {
+      "id": "ztu2tw2",
+      "userEmail": "prajeethv.deepwoods@gmail.com",
+      "action": "User Login",
+      "timestamp": "2026-06-18T03:48:56.409Z"
+    },
+    {
+      "id": "3yri4su",
+      "userEmail": "prajeethv.deepwoods@gmail.com",
+      "action": "User Logout",
+      "timestamp": "2026-06-18T04:00:09.285Z"
+    },
+    {
+      "id": "wbi26wc",
+      "userEmail": "prajeethv.deepwoods@gmail.com",
+      "action": "User Login",
+      "timestamp": "2026-06-18T04:00:49.969Z"
+    },
+    {
+      "id": "epnvg9g",
+      "userEmail": "prajeethv.deepwoods@gmail.com",
+      "action": "User Logout",
+      "timestamp": "2026-06-18T04:04:28.351Z"
+    },
+    {
+      "id": "adnkh4l",
+      "userEmail": "prajeethv.deepwoods@gmail.com",
+      "action": "User Login",
+      "timestamp": "2026-06-18T04:08:29.523Z"
+    },
+    {
+      "id": "ya3xwru",
+      "userEmail": "prajeethv.deepwoods@gmail.com",
+      "action": "User Logout",
+      "timestamp": "2026-06-18T04:10:38.002Z"
+    },
+    {
+      "id": "3kvz1n2",
+      "userEmail": "prajeethv.deepwoods@gmail.com",
+      "action": "User Login",
+      "timestamp": "2026-06-18T04:21:41.259Z"
+    },
+    {
+      "id": "x097j8a",
+      "userEmail": "prajeethv.deepwoods@gmail.com",
+      "action": "User Logout",
+      "timestamp": "2026-06-18T04:22:39.242Z"
+    },
+    {
+      "id": "cnaskzh",
+      "userEmail": "prajeethv.deepwoods@gmail.com",
+      "action": "User Login",
+      "timestamp": "2026-06-18T04:40:03.316Z"
+    },
+    {
+      "id": "wqhixkm",
+      "userEmail": "prajeethv.deepwoods@gmail.com",
+      "action": "User Login",
+      "timestamp": "2026-06-18T04:53:38.451Z"
+    },
+    {
+      "id": "u1sghpa",
+      "userEmail": "prajeethv18@gmail.com",
+      "action": "User Disable",
+      "timestamp": "2026-06-18T04:54:23.007Z"
+    },
+    {
+      "id": "88604di",
+      "userEmail": "prajeethv.deepwoods@gmail.com",
+      "action": "User Logout",
+      "timestamp": "2026-06-18T04:59:45.544Z"
+    },
+    {
+      "id": "ubaem1u",
+      "userEmail": "prajeethv.deepwoods@gmail.com",
+      "action": "User Logout",
+      "timestamp": "2026-06-18T05:00:40.737Z"
+    },
+    {
+      "id": "p87uhiw",
+      "userEmail": "prajeethv.deepwoods@gmail.com",
+      "action": "User Login",
+      "timestamp": "2026-06-18T05:04:05.254Z"
+    },
+    {
+      "id": "isjqacj",
+      "userEmail": "prajeethv.deepwoods@gmail.com",
+      "action": "User Logout",
+      "timestamp": "2026-06-18T05:16:02.631Z"
+    },
+    {
+      "id": "nh2j2kl",
+      "userEmail": "prajeethv.deepwoods@gmail.com",
+      "action": "User Login",
+      "timestamp": "2026-06-18T05:16:28.642Z"
+    },
+    {
+      "id": "fh9fqpg",
+      "userEmail": "prajeethv.deepwoods@gmail.com",
+      "action": "User Logout",
+      "timestamp": "2026-06-18T05:16:30.251Z"
+    },
+    {
+      "id": "4nq0ypm",
+      "userEmail": "prajeethv.deepwoods@gmail.com",
+      "action": "User Login",
+      "timestamp": "2026-06-18T05:16:38.009Z"
+    },
+    {
+      "id": "jue4o5e",
+      "userEmail": "prajeethv.deepwoods@gmail.com",
+      "action": "User Logout",
+      "timestamp": "2026-06-18T05:19:18.073Z"
+    },
+    {
+      "id": "xy3v0jl",
+      "userEmail": "prajeethv.deepwoods@gmail.com",
+      "action": "User Login",
+      "timestamp": "2026-06-18T05:20:15.540Z"
+    },
+    {
+      "id": "dt9a0ma",
+      "userEmail": "prajeethv.deepwoods@gmail.com",
+      "action": "User Logout",
+      "timestamp": "2026-06-18T05:27:33.536Z"
+    },
+    {
+      "id": "bt4jtr6",
+      "userEmail": "prajeethv.deepwoods@gmail.com",
+      "action": "User Login",
+      "timestamp": "2026-06-18T05:27:56.826Z"
+    },
+    {
+      "id": "wgao8qu",
+      "userEmail": "prajeethv.deepwoods@gmail.com",
+      "action": "User Logout",
+      "timestamp": "2026-06-18T05:31:14.699Z"
+    },
+    {
+      "id": "uhhnae9",
+      "userEmail": "prajeethv.deepwoods@gmail.com",
+      "action": "User Login",
+      "timestamp": "2026-06-18T05:32:29.288Z"
+    },
+    {
+      "id": "yizi6a3",
+      "userEmail": "prajeethv.deepwoods@gmail.com",
+      "action": "User Logout",
+      "timestamp": "2026-06-18T05:35:29.670Z"
+    }
+  ]
+}

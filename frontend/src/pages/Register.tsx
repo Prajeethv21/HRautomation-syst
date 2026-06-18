@@ -1,8 +1,7 @@
 import React, { useState } from 'react';
 import { Link, Navigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
-import { AlertCircle, Lock, Mail, User, CheckCircle, ArrowRight } from 'lucide-react';
-import Button from '../components/ui/Button';
+import { CheckCircle } from 'lucide-react';
 
 const Register: React.FC = () => {
   const { user, register } = useAuth();
@@ -54,143 +53,177 @@ const Register: React.FC = () => {
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-[#F9FAFB] p-6 relative overflow-hidden font-jakarta select-none">
-      {/* Decorative Brand Leaf Blur Elements */}
-      <div className="absolute top-[-20%] left-[-10%] w-[500px] h-[500px] bg-[#8CC63F]/5 blur-[120px] rounded-full pointer-events-none" />
-      <div className="absolute bottom-[-20%] right-[-10%] w-[500px] h-[500px] bg-[#6FAF45]/5 blur-[120px] rounded-full pointer-events-none" />
-
-      <div className="max-w-md w-full bg-white rounded-3xl border border-brand-border p-10 shadow-[0_20px_50px_rgba(140,198,63,0.08)] z-10 flex flex-col items-center">
-        {/* Brand Logo Header */}
-        <div className="flex flex-col items-center mb-8">
-          <img 
-            src="/Deepwoodsgreen.jpeg" 
-            alt="Deepwoods Green Logo" 
-            className="h-16 w-auto object-contain mb-3"
-          />
-          <h2 className="text-xl font-bold text-brand-text font-jakarta mt-2">
-            Create ATS Account
-          </h2>
-          <p className="text-xs text-gray-400 mt-1">
-            Register for internal recruitment portal
-          </p>
+    <div className="min-h-screen flex font-jakarta bg-white select-none">
+      {/* Left Column - Form Section (60%) */}
+      <div className="w-full lg:w-[60%] flex flex-col justify-between p-8 md:p-16 bg-white relative z-10 min-h-screen">
+        {/* Deepwoods branding header */}
+        <div className="flex items-center justify-between">
+          <img src="/DeepwoodsR.png" alt="Deepwoods Logo" className="h-12 object-contain select-none" />
+          <span className="text-xs text-gray-400 font-semibold uppercase tracking-wider font-jakarta">
+            Recruitment Portal
+          </span>
         </div>
 
-        {/* Error Alerts */}
-        {errorMsg && (
-          <div className="w-full bg-[#FFF5F5] border border-[#FFC9C9] text-[#C92A2A] p-4 rounded-2xl flex items-start gap-3 text-xs mb-6 font-semibold leading-relaxed animate-fade-in">
-            <AlertCircle className="w-4 h-4 shrink-0 mt-0.5 text-red-500" />
-            <span>{errorMsg}</span>
-          </div>
-        )}
-
-        {/* Success Alert */}
-        {successMsg && (
-          <div className="w-full bg-[#F4F9F1] border border-[#D5E8CE] text-[#3E7D28] p-4 rounded-2xl flex flex-col items-center text-center gap-3 text-xs mb-6 font-semibold animate-fade-in">
-            <CheckCircle className="w-8 h-8 text-[#6FAF45]" />
-            <p className="text-sm font-bold">{successMsg}</p>
-            <p className="text-gray-500 font-medium font-jakarta">
-              You can now return to the login screen.
-            </p>
-            <Link to="/login" className="mt-2 w-full">
-              <Button variant="primary" className="w-full h-10 text-xs font-bold rounded-xl">
-                Go to Login <ArrowRight className="w-3.5 h-3.5 ml-1" />
-              </Button>
+        <div className="max-w-md w-full mx-auto my-auto py-12 space-y-8">
+          {/* Top Switcher Tabs */}
+          <div className="flex items-center gap-6 border-b border-gray-150 pb-3">
+            <Link to="/login" className="text-sm font-semibold text-gray-400 hover:text-gray-600 pb-3 border-b-2 border-transparent cursor-pointer">
+              Sign in
             </Link>
+            <span className="text-sm font-extrabold text-gray-900 pb-3 border-b-2 border-[#91ba30] cursor-pointer">
+              Register
+            </span>
           </div>
-        )}
 
-        {/* Registration Form */}
-        {!successMsg && (
-          <form onSubmit={handleSubmit} className="w-full space-y-4">
-            <div className="space-y-1.5">
-              <label className="text-xs font-bold text-gray-400 uppercase tracking-wider block font-jakarta">
-                Full Name
-              </label>
-              <div className="relative">
-                <User className="w-4 h-4 text-gray-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
-                <input
-                  type="text"
-                  required
-                  placeholder="John Doe"
-                  value={name}
-                  onChange={(e) => setName(e.target.value)}
-                  className="w-full h-11 text-sm pl-10 pr-4 bg-gray-50 border border-brand-border rounded-2xl focus:border-[#6FAF45]/50 focus:ring-1 focus:ring-[#6FAF45]/20 text-brand-text placeholder-gray-400 font-medium transition-colors"
-                  disabled={loading}
-                />
+          <div>
+            <h2 className="text-3xl font-extrabold text-gray-900 tracking-tight">
+              Create Account
+            </h2>
+          </div>
+
+          {/* Success message view */}
+          {successMsg && (
+            <div className="bg-green-50 border border-green-200 text-green-800 p-6 rounded-2xl flex flex-col items-center text-center gap-4 text-xs font-semibold animate-fade-in">
+              <CheckCircle className="w-10 h-10 text-[#91ba30]" />
+              <div>
+                <p className="text-sm font-bold">{successMsg}</p>
+                <p className="text-gray-500 font-medium mt-1">Your access request has been sent for admin review.</p>
               </div>
+              <Link to="/login" className="w-full">
+                <button className="w-full h-11 bg-[#91ba30] hover:bg-[#91ba30]/90 text-white rounded-xl text-xs font-bold transition-all shadow-sm focus:outline-none">
+                  Return to Sign In
+                </button>
+              </Link>
             </div>
+          )}
 
-            <div className="space-y-1.5">
-              <label className="text-xs font-bold text-gray-400 uppercase tracking-wider block font-jakarta">
-                Email Address
-              </label>
-              <div className="relative">
-                <Mail className="w-4 h-4 text-gray-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
-                <input
-                  type="email"
-                  required
-                  placeholder="hr@deepwoodsgreen.com"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  className="w-full h-11 text-sm pl-10 pr-4 bg-gray-50 border border-brand-border rounded-2xl focus:border-[#6FAF45]/50 focus:ring-1 focus:ring-[#6FAF45]/20 text-brand-text placeholder-gray-400 font-medium transition-colors"
+          {/* Registration form view */}
+          {!successMsg && (
+            <>
+              {errorMsg && (
+                <div className="bg-red-50 border border-red-200 text-red-800 p-4 rounded-xl text-xs font-semibold leading-relaxed animate-fade-in">
+                  {errorMsg}
+                </div>
+              )}
+
+              <form onSubmit={handleSubmit} className="space-y-4">
+                <div className="space-y-1.5">
+                  <label className="text-xs font-bold text-gray-500 uppercase tracking-wider block font-jakarta">
+                    Full Name
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    placeholder="."
+                    value={name}
+                    onChange={(e) => setName(e.target.value)}
+                    className="w-full h-11 text-sm px-4 bg-white border border-gray-200 rounded-xl focus:border-[#91ba30] focus:ring-2 focus:ring-[#91ba30]/10 text-gray-800 placeholder-gray-400 font-medium transition-all focus:outline-none"
+                    disabled={loading}
+                  />
+                </div>
+
+                <div className="space-y-1.5">
+                  <label className="text-xs font-bold text-gray-500 uppercase tracking-wider block font-jakarta">
+                    Email Address
+                  </label>
+                  <input
+                    type="email"
+                    required
+                    placeholder="hr@deepwoodsgreen.com"
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    className="w-full h-11 text-sm px-4 bg-white border border-gray-200 rounded-xl focus:border-[#91ba30] focus:ring-2 focus:ring-[#91ba30]/10 text-gray-800 placeholder-gray-400 font-medium transition-all focus:outline-none"
+                    disabled={loading}
+                  />
+                </div>
+
+                <div className="space-y-1.5">
+                  <label className="text-xs font-bold text-gray-500 uppercase tracking-wider block font-jakarta">
+                    Password
+                  </label>
+                  <input
+                    type="password"
+                    required
+                    placeholder="••••••••"
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    className="w-full h-11 text-sm px-4 bg-white border border-gray-200 rounded-xl focus:border-[#91ba30] focus:ring-2 focus:ring-[#91ba30]/10 text-gray-800 placeholder-gray-400 font-medium transition-all focus:outline-none"
+                    disabled={loading}
+                  />
+                </div>
+
+                <div className="space-y-1.5">
+                  <label className="text-xs font-bold text-gray-500 uppercase tracking-wider block font-jakarta">
+                    Confirm Password
+                  </label>
+                  <input
+                    type="password"
+                    required
+                    placeholder="••••••••"
+                    value={confirmPassword}
+                    onChange={(e) => setConfirmPassword(e.target.value)}
+                    className="w-full h-11 text-sm px-4 bg-white border border-gray-200 rounded-xl focus:border-[#91ba30] focus:ring-2 focus:ring-[#91ba30]/10 text-gray-800 placeholder-gray-400 font-medium transition-all focus:outline-none"
+                    disabled={loading}
+                  />
+                </div>
+
+                <button
+                  type="submit"
                   disabled={loading}
-                />
-              </div>
-            </div>
+                  className="w-full h-12 bg-[#91ba30] hover:bg-[#91ba30]/90 text-white active:scale-[0.98] rounded-xl text-sm font-extrabold tracking-wide transition-all mt-6 shadow-sm flex items-center justify-center focus:outline-none"
+                >
+                  {loading ? 'Creating account...' : 'Create account'}
+                </button>
+              </form>
+            </>
+          )}
+        </div>
 
-            <div className="space-y-1.5">
-              <label className="text-xs font-bold text-gray-400 uppercase tracking-wider block font-jakarta">
-                Password
-              </label>
-              <div className="relative">
-                <Lock className="w-4 h-4 text-gray-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
-                <input
-                  type="password"
-                  required
-                  placeholder="•••••••• (Min 6 characters)"
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  className="w-full h-11 text-sm pl-10 pr-4 bg-gray-50 border border-brand-border rounded-2xl focus:border-[#6FAF45]/50 focus:ring-1 focus:ring-[#6FAF45]/20 text-brand-text placeholder-gray-400 font-medium transition-colors"
-                  disabled={loading}
-                />
-              </div>
-            </div>
+        {/* Small Screen Copyright only, as left column is hidden on mobile */}
+        <div className="text-[10px] text-gray-400 text-center lg:hidden select-none">
+          © {new Date().getFullYear()} Deepwoods Green Initiatives. All rights reserved.
+        </div>
+      </div>
 
-            <div className="space-y-1.5">
-              <label className="text-xs font-bold text-gray-400 uppercase tracking-wider block font-jakarta">
-                Confirm Password
-              </label>
-              <div className="relative">
-                <Lock className="w-4 h-4 text-gray-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
-                <input
-                  type="password"
-                  required
-                  placeholder="••••••••"
-                  value={confirmPassword}
-                  onChange={(e) => setConfirmPassword(e.target.value)}
-                  className="w-full h-11 text-sm pl-10 pr-4 bg-gray-50 border border-brand-border rounded-2xl focus:border-[#6FAF45]/50 focus:ring-1 focus:ring-[#6FAF45]/20 text-brand-text placeholder-gray-400 font-medium transition-colors"
-                  disabled={loading}
-                />
-              </div>
-            </div>
+      {/* Right Column - Initiatives Copy Overlay (40%) */}
+      <div className="hidden lg:flex lg:w-[40%] text-white p-12 flex-col justify-between relative overflow-hidden shrink-0 bg-[#0a0f0d]">
+        {/* Organic wave divider SVG overlay */}
+        <div className="absolute top-0 bottom-0 left-0 h-full w-24 text-white fill-current z-20 pointer-events-none">
+          <svg className="h-full w-full" viewBox="0 0 100 1000" preserveAspectRatio="none">
+            <path d="M0 0 L100 0 C30 250, 70 750, 0 1000 Z" />
+          </svg>
+        </div>
 
-            <Button
-              type="submit"
-              variant="primary"
-              className="w-full h-11 text-sm font-bold rounded-2xl shadow-sm hover:shadow active:scale-[0.98] mt-3"
-              isLoading={loading}
-            >
-              Register Account
-            </Button>
-          </form>
-        )}
+        {/* Overlapping circular outlines */}
+        <div className="absolute right-0 top-1/2 -translate-y-1/2 translate-x-1/2 w-[500px] h-[500px] rounded-full border-[50px] border-[#91ba30]/[0.05] pointer-events-none z-20" />
+        <div className="absolute right-0 top-1/2 -translate-y-1/2 translate-x-1/3 w-[360px] h-[360px] rounded-full border-[24px] border-white/[0.02] pointer-events-none z-20" />
 
-        {/* Login Redirect Link */}
-        <div className="mt-8 text-center text-xs font-semibold text-gray-400">
-          Already have an account?{' '}
-          <Link to="/login" className="text-[#6FAF45] hover:text-[#5f953a] hover:underline font-bold transition-colors">
-            Sign In
-          </Link>
+        {/* Content wrapper with left padding to prevent wavy divider overlap */}
+        <div className="z-30 flex-1 flex flex-col justify-between pl-20">
+          {/* Initiatives Top Label */}
+          <div className="flex items-center gap-2">
+            <span className="w-5 h-[2px] bg-[#91ba30] block"></span>
+            <span className="text-xs font-bold text-[#91ba30] uppercase tracking-widest font-jakarta">
+              Deepwoods Green Initiatives
+            </span>
+          </div>
+
+          {/* Initiatives Message */}
+          <div className="space-y-6 max-w-xs my-auto">
+            <h1 className="text-4xl md:text-5xl font-extrabold tracking-tight leading-[1.15] text-white">
+              Cultivating <br />
+              careers for <span className="italic text-[#91ba30]">a greener</span> <br />
+              <span className="text-[#91ba30]">tomorrow.</span>
+            </h1>
+            <p className="text-xs md:text-sm text-gray-300 font-medium leading-relaxed max-w-xs">
+              Connecting passionate talent with sustainable opportunities that make a lasting environmental impact.
+            </p>
+          </div>
+
+          {/* Copyright footer */}
+          <div className="text-[10px] text-gray-500 font-medium">
+            © {new Date().getFullYear()} Deepwoods Green Initiatives. All rights reserved.
+          </div>
         </div>
       </div>
     </div>

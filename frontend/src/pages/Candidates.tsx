@@ -15,45 +15,33 @@ import { useToast } from '../components/ui/Toast';
 const getStatusBadgeClass = (status: string) => {
   switch (status) {
     case 'Submitted':
-      return 'bg-gray-50 text-gray-700 border-gray-100';
+      return 'bg-white text-gray-800 border-gray-200';
     case 'Shortlisted':
-      return 'bg-[#F4F9EC] text-[#2D6A2D] border-[#8CC63F]/20';
+      return 'bg-white text-gray-800 border-brand/50';
     case 'Scheduled':
-      return 'bg-[#FEF9E7] text-[#B7950B] border-[#F9E79F]';
+      return 'bg-white text-gray-800 border-amber-300';
     case 'Interviewing':
-      return 'bg-[#F4F9EC] text-[#1B4332] border-[#8CC63F]/20';
+      return 'bg-white text-gray-800 border-brand/50';
     case 'Selected':
-      return 'bg-[#EDF9E8] text-[#2D6A2D] border-[#D7F1C8]';
+      return 'bg-white text-gray-800 border-green-400';
     case 'Rejected':
-      return 'bg-[#FFF5F5] text-[#C92A2A] border-[#FFC9C9]';
+      return 'bg-white text-gray-800 border-red-300';
     case 'On Hold':
-      return 'bg-[#FEF9E7] text-[#B7950B] border-[#F9E79F]';
+      return 'bg-white text-gray-800 border-amber-300';
     default:
-      return 'bg-[#F4F7F5] text-gray-500 border-[#E3ECE6]';
+      return 'bg-white text-gray-800 border-gray-200';
   }
 };
 
-const getSourceBadgeClass = (source?: string) => {
-  switch (source) {
-    case 'LinkedIn':
-      return 'bg-gray-100 text-gray-800 border-gray-200';
-    case 'Career Page':
-      return 'bg-[#EDF9E8] text-[#2D6A2D] border-[#D7F1C8]';
-    case 'Referral':
-      return 'bg-[#FEF9E7] text-[#B7950B] border-[#F9E79F]';
-    case 'Website':
-      return 'bg-gray-100 text-gray-800 border-gray-200';
-    case 'Manual Entry':
-      return 'bg-gray-100 text-gray-800 border-gray-200';
-    default:
-      return 'bg-gray-50 text-gray-600 border-gray-100';
-  }
+const getSourceBadgeClass = (_source?: string) => {
+  return 'bg-white text-gray-600 border-gray-200';
 };
 
 const SHEET_STATUS_OPTIONS = [
   'Submitted',
   'Shortlisted',
   'Scheduled',
+  'Interviewing',
   'On Hold',
   'Selected',
   'Rejected'
@@ -125,6 +113,12 @@ const Candidates: React.FC = () => {
   };
 
   useEffect(() => {
+    // Check if there is a search query in the URL params
+    const params = new URLSearchParams(window.location.search);
+    const searchParam = params.get('search');
+    if (searchParam) {
+      setSearchQuery(searchParam);
+    }
     fetchCandidatesData();
   }, []);
 
@@ -503,7 +497,7 @@ const Candidates: React.FC = () => {
             placeholder="Search by name, email, or role..."
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            className="w-full h-10 text-sm pl-10 pr-4 bg-[#EDF9E8]/15 border border-[#E5E7EB] rounded-2xl focus:border-[#6FAF45]/40 text-brand-text placeholder-gray-400 font-medium"
+            className="w-full h-10 text-sm pl-10 pr-4 bg-white border border-[#E5E7EB] rounded-2xl focus:border-brand/40 text-brand-text placeholder-gray-400 font-medium"
           />
         </div>
 
@@ -531,8 +525,8 @@ const Candidates: React.FC = () => {
               }}
               className={`flex items-center justify-center gap-2.5 px-4 h-10 border rounded-2xl text-sm font-semibold transition-all duration-200 select-none active:scale-[0.98] ${
                 isFilterOpen || statusFilter || emailStatusFilter || sourceFilter
-                  ? 'bg-[#EDF9E8] border-[#A8D672]/50 text-[#1B4332] shadow-sm font-bold'
-                  : 'bg-white border-brand-border text-gray-600 hover:bg-[#EDF9E8]/35'
+                  ? 'bg-white border-brand text-brand shadow-sm font-bold'
+                  : 'bg-white border-brand-border text-gray-600 hover:border-brand/40'
               }`}
             >
               <Filter className="w-4 h-4" />
@@ -765,7 +759,7 @@ const Candidates: React.FC = () => {
             <table className="w-full text-left border-collapse">
               <thead>
                 <tr className="bg-brand-bg/40 border-b border-brand-border">
-                  <th className="px-6 py-4.5 w-10"><input type="checkbox" disabled /></th>
+                  <th className="px-6 py-4 w-10"><input type="checkbox" disabled /></th>
                   <th className="px-6 py-4 text-xs font-bold text-gray-500 uppercase tracking-wider font-jakarta">Candidate Name</th>
                   <th className="px-6 py-4 text-xs font-bold text-gray-500 uppercase tracking-wider font-jakarta">Email</th>
                   <th className="px-6 py-4 text-xs font-bold text-gray-500 uppercase tracking-wider font-jakarta">Role</th>
@@ -778,17 +772,17 @@ const Candidates: React.FC = () => {
               </thead>
               <tbody className="divide-y divide-brand-border">
                 {[...Array(5)].map((_, i) => (
-                  <tr key={i} className="animate-pulse">
-                    <td className="px-6 py-4.5"><div className="w-4 h-4 bg-gray-200 rounded" /></td>
-                    <td className="px-6 py-4.5"><div className="h-4 bg-gray-200 rounded w-28" /></td>
-                    <td className="px-6 py-4.5"><div className="h-3 bg-gray-200 rounded w-36" /></td>
-                    <td className="px-6 py-4.5"><div className="h-3 bg-gray-200 rounded w-24" /></td>
-                    <td className="px-6 py-4.5"><div className="h-3 bg-gray-200 rounded w-20" /></td>
-                    <td className="px-6 py-4.5"><div className="h-5 bg-gray-200 rounded-full w-16" /></td>
-                    <td className="px-6 py-4.5"><div className="h-5 bg-gray-200 rounded-full w-14" /></td>
-                    <td className="px-6 py-4.5"><div className="h-5 bg-gray-200 rounded-full w-14" /></td>
-                    <td className="px-6 py-4.5 text-right flex justify-end gap-2"><div className="h-8 bg-gray-200 rounded-lg w-14" /><div className="h-8 bg-gray-200 rounded-lg w-24" /></td>
-                  </tr>
+                   <tr key={i} className="animate-pulse">
+                     <td className="px-6 py-4"><div className="w-4 h-4 bg-gray-200 rounded" /></td>
+                     <td className="px-6 py-4"><div className="h-4 bg-gray-200 rounded w-28" /></td>
+                     <td className="px-6 py-4"><div className="h-3 bg-gray-200 rounded w-36" /></td>
+                     <td className="px-6 py-4"><div className="h-3 bg-gray-200 rounded w-24" /></td>
+                     <td className="px-6 py-4"><div className="h-3 bg-gray-200 rounded w-20" /></td>
+                     <td className="px-6 py-4"><div className="h-5 bg-gray-200 rounded-full w-16" /></td>
+                     <td className="px-6 py-4"><div className="h-5 bg-gray-200 rounded-full w-14" /></td>
+                     <td className="px-6 py-4"><div className="h-5 bg-gray-200 rounded-full w-14" /></td>
+                     <td className="px-6 py-4 text-right flex justify-end gap-2"><div className="h-8 bg-gray-200 rounded-lg w-14" /><div className="h-8 bg-gray-200 rounded-lg w-24" /></td>
+                   </tr>
                 ))}
               </tbody>
             </table>
@@ -888,12 +882,12 @@ const Candidates: React.FC = () => {
                     <td className="px-4 py-4 whitespace-nowrap">
                       <span className={`text-[10px] font-extrabold px-2.5 py-0.5 rounded-full uppercase border ${
                         candidate.emailStatus && candidate.emailStatus.toLowerCase().includes('sent')
-                          ? 'bg-[#EDF9E8] text-[#2D6A2D] border-[#D7F1C8]'
+                          ? 'bg-white text-green-700 border-green-300'
                           : candidate.emailStatus === 'Interview Scheduled'
-                          ? 'bg-[#FEF9E7] text-[#B7950B] border-[#F9E79F]'
+                          ? 'bg-white text-amber-700 border-amber-300'
                           : candidate.emailStatus === 'Failed'
-                          ? 'bg-[#FFF5F5] text-[#C92A2A] border-[#FFC9C9]'
-                          : 'bg-[#F4F7F5] text-gray-500 border-[#E3ECE6]'
+                          ? 'bg-white text-red-600 border-red-300'
+                          : 'bg-white text-gray-500 border-gray-200'
                       }`}>
                         {candidate.emailStatus || 'Pending'}
                       </span>

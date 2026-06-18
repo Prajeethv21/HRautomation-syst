@@ -510,7 +510,8 @@ function doPost(e) {
       var fileData = data.fileData; // base64 string
       var fileName = data.fileName;
       var roleName = data.roleName;
-      return handleUploadResume(sheetId, fileData, fileName, roleName);
+      var source = data.source;
+      return handleUploadResume(sheetId, fileData, fileName, roleName, source);
     }
 
     if (action === "sendAdminNotification") {
@@ -1086,6 +1087,12 @@ function handleCreateCandidate(sheetId, candidate) {
       Logger.log("[CREATE] Dept sheet row appended at row " + deptLastRow + " in " + deptSheetName);
     }
 
+    // Log resume file mapping if present (e.g. from website uploads)
+    if (candidate.resumeFileId) {
+      logProcessedResume(sheetId, clean.email, candidate.resumeFileId);
+      Logger.log("[CREATE] Logged processed resume file ID: " + candidate.resumeFileId + " for candidate: " + clean.email);
+    }
+
     return makeJsonResponse({ success: true, message: "Candidate created and routed to " + deptSheetName }, 200);
 
   } catch (error) {
@@ -1379,12 +1386,13 @@ function processNewResumes(sheetId, groqApiKey) {
         
         var isPDF = mimeType === "application/pdf";
         var isDOCX = mimeType === "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
+        var isTXT = mimeType === "text/plain" || fileName.toLowerCase().endsWith('.txt');
         
-        var passesValidation = isPDF || isDOCX;
-        Logger.log("[FILE] File Validation check: passesValidation = " + passesValidation + " (isPDF=" + isPDF + ", isDOCX=" + isDOCX + ")");
+        var passesValidation = isPDF || isDOCX || isTXT;
+        Logger.log("[FILE] File Validation check: passesValidation = " + passesValidation + " (isPDF=" + isPDF + ", isDOCX=" + isDOCX + ", isTXT=" + isTXT + ")");
         
         if (!passesValidation) {
-          Logger.log("[SKIPPED] File skipped: Name: " + fileName + " | ID: " + fileId + " | Reason: Unsupported file type. Only PDF/DOCX are allowed. MIME was: " + mimeType);
+          Logger.log("[SKIPPED] File skipped: Name: " + fileName + " | ID: " + fileId + " | Reason: Unsupported file type. Only PDF/DOCX/TXT are allowed. MIME was: " + mimeType);
           return;
         }
         
@@ -1394,9 +1402,24 @@ function processNewResumes(sheetId, groqApiKey) {
         try {
           var extracted = null;
           if (isPDF) {
+            // Check file size to avoid timeout/error on large PDFs (Google OCR limit is 2MB)
+            var size = parseInt(file.fileSize || 0);
+            if (size > 2000000) {
+              Logger.log("[SCAN] PDF file " + fileName + " is too large (" + size + " bytes) for direct Google OCR. Skipping direct scan. Moving to Processed to rely on parallel text version.");
+              moveProcessedResume(fileId, sourceName, roleName, hrResumesFolderId);
+              return;
+            }
             extracted = extractTextFromPDF(fileId);
           } else if (isDOCX) {
             extracted = extractTextFromDOCX(fileId);
+          } else if (isTXT) {
+            try {
+              var txtFile = DriveApp.getFileById(fileId);
+              var txtText = txtFile.getBlob().getDataAsString("utf-8");
+              extracted = { text: txtText, links: [] };
+            } catch (txtErr) {
+              Logger.log("[ERROR] Failed to read txt file " + fileName + ": " + txtErr.toString());
+            }
           }
           
           if (extracted && extracted.text) {
@@ -1437,6 +1460,24 @@ function processNewResumes(sheetId, groqApiKey) {
               Logger.log("[SKIPPED] File skipped: Name: " + fileName + " | ID: " + fileId + " | Reason: Duplicate candidate email (" + details.email + ") already exists in Candidates sheet.");
               moveProcessedResume(fileId, sourceName, roleName, hrResumesFolderId);
               Logger.log("[PROCESSED] Moved duplicate file " + fileName + " (ID: " + fileId + ") to Processed folder.");
+              
+              // If this was a duplicate txt file, find and move the corresponding PDF file too
+              if (isTXT) {
+                try {
+                  var matchingPdfName = fileName.replace(/\.txt$/i, '.pdf');
+                  var pdfFilesResult = Drive.Files.list({
+                    q: `'${roleFolderId}' in parents and title = '${matchingPdfName.replace(/'/g, "\\'")}' and trashed = false`
+                  });
+                  var pdfItems = pdfFilesResult.items || [];
+                  if (pdfItems.length > 0) {
+                    var matchingPdfId = pdfItems[0].id;
+                    Logger.log("[SCAN] Archiving duplicate matching PDF: " + matchingPdfName);
+                    moveProcessedResume(matchingPdfId, sourceName, roleName, hrResumesFolderId);
+                  }
+                } catch (pdfMoveErr) {
+                  Logger.log("[WARN] Failed to move duplicate matching PDF: " + pdfMoveErr.toString());
+                }
+              }
               return;
             }
             
@@ -1459,6 +1500,24 @@ function processNewResumes(sheetId, groqApiKey) {
             Logger.log("[SCAN] Archiving file to Processed...");
             moveProcessedResume(fileId, sourceName, roleName, hrResumesFolderId);
             Logger.log("[PROCESSED] Moved file " + fileName + " (ID: " + fileId + ") to Processed folder.");
+            
+            // If we just processed a txt file, find and move the corresponding PDF file too
+            if (isTXT) {
+              try {
+                var matchingPdfName = fileName.replace(/\.txt$/i, '.pdf');
+                var pdfFilesResult = Drive.Files.list({
+                  q: `'${roleFolderId}' in parents and title = '${matchingPdfName.replace(/'/g, "\\'")}' and trashed = false`
+                });
+                var pdfItems = pdfFilesResult.items || [];
+                if (pdfItems.length > 0) {
+                  var matchingPdfId = pdfItems[0].id;
+                  Logger.log("[SCAN] Archiving matching PDF: " + matchingPdfName);
+                  moveProcessedResume(matchingPdfId, sourceName, roleName, hrResumesFolderId);
+                }
+              } catch (pdfMoveErr) {
+                Logger.log("[WARN] Failed to move matching PDF: " + pdfMoveErr.toString());
+              }
+            }
             
             totalFilesProcessed++;
             processedCount++;
@@ -1536,7 +1595,7 @@ function extractTextFromPDF(fileId) {
 
   var resource = {
     title: "TempOCR_" + fileId,
-    mimeType: blob.getMimeType()
+    mimeType: blob.getContentType()
   };
 
   var tempFile = Drive.Files.insert(resource, blob, { ocr: true });
@@ -1963,12 +2022,75 @@ function triggerTransitionSideEffects(sheetId, candidateEmail, oldStatus, newSta
 
   if (masterRowIndex === -1) return;
 
-  if (newStatus === "Shortlisted" && oldStatus === "Submitted") {
+  if (newStatus === "Rejected") {
+    deleteResumeFilesFromDrive(sheetId, candidateName, candidateEmail);
+  } else if (newStatus === "Shortlisted" && oldStatus === "Submitted") {
     sendShortlistEmail(candidateName, candidateEmail, role);
     masterSheet.getRange(masterRowIndex, 6).setValue("Shortlisted Email Sent");
   } else if (newStatus === "On Hold") {
     sendOnHoldEmail(candidateName, candidateEmail, role);
     masterSheet.getRange(masterRowIndex, 6).setValue("On Hold Email Sent");
+  }
+}
+
+function deleteResumeFilesFromDrive(sheetId, candidateName, candidateEmail) {
+  Logger.log("[DELETE] Attempting to delete resume files for " + candidateName + " (" + candidateEmail + ")");
+  
+  // 1. Delete by looking up from ProcessedResumesLog
+  try {
+    var ss = sheetId ? SpreadsheetApp.openById(sheetId) : SpreadsheetApp.getActiveSpreadsheet();
+    var logSheet = ss.getSheetByName(LOG_SHEET_NAME);
+    if (logSheet) {
+      var data = logSheet.getDataRange().getValues();
+      for (var i = 1; i < data.length; i++) {
+        if (data[i][0] && data[i][0].toString().trim().toLowerCase() === candidateEmail.trim().toLowerCase()) {
+          var loggedFileId = data[i][1];
+          if (loggedFileId) {
+            try {
+              var f = DriveApp.getFileById(loggedFileId);
+              Logger.log("[DELETE] Trashing logged file: " + f.getName() + " (ID: " + loggedFileId + ")");
+              f.setTrashed(true);
+            } catch (e) {
+              Logger.log("[DELETE WARN] Could not delete logged file: " + e.toString());
+            }
+          }
+        }
+      }
+    }
+  } catch (err) {
+    Logger.log("[DELETE ERROR] Log sheet lookup failed: " + err.toString());
+  }
+
+  // 2. Search Drive for any files matching candidateName or candidateEmail to clean up all formats (PDF, TXT, DOCX)
+  if (!candidateName && !candidateEmail) return;
+  
+  var queries = [];
+  if (candidateEmail) {
+    queries.push("title contains '" + candidateEmail.replace(/'/g, "\\'") + "'");
+  }
+  if (candidateName) {
+    var cleanName = candidateName.replace(/\s+/g, "");
+    queries.push("title contains '" + cleanName.replace(/'/g, "\\'") + "'");
+    queries.push("title contains '" + candidateName.replace(/'/g, "\\'") + "'");
+  }
+  
+  var searchQuery = "(" + queries.join(" or ") + ") and trashed = false";
+  Logger.log("[DELETE] Drive search query: " + searchQuery);
+  
+  try {
+    var files = DriveApp.searchFiles(searchQuery);
+    while (files.hasNext()) {
+      var file = files.next();
+      var nameLower = file.getName().toLowerCase();
+      // Skip joining letters, templates, and spreadsheets
+      if (nameLower.indexOf("joiningletter") !== -1 || nameLower.indexOf("template") !== -1 || file.getMimeType() === MimeType.GOOGLE_SHEETS) {
+        continue;
+      }
+      Logger.log("[DELETE] Trashing found file: " + file.getName() + " (ID: " + file.getId() + ")");
+      file.setTrashed(true);
+    }
+  } catch (err) {
+    Logger.log("[DELETE ERROR] Drive search failed: " + err.toString());
   }
 }
 
@@ -2725,8 +2847,9 @@ function triggerAuthorization() {
   }
 }
 
-function handleUploadResume(sheetId, fileData, fileName, roleName) {
-  Logger.log("ENTERED handleUploadResume for roleName = " + roleName);
+function handleUploadResume(sheetId, fileData, fileName, roleName, source) {
+  var activeSource = source || "Website";
+  Logger.log("ENTERED handleUploadResume for roleName = " + roleName + " and source = " + activeSource);
   try {
     if (!fileData || !fileName || !roleName) {
       return makeJsonResponse({ success: false, message: "Missing fileData, fileName, or roleName" }, 400);
@@ -2739,8 +2862,9 @@ function handleUploadResume(sheetId, fileData, fileName, roleName) {
       hrResumesFolderId = getOrCreateFolder(null, "HR Resumes");
     }
 
-    // Website uploads go into "Other" source folder
-    var sourceFolderId = getOrCreateFolder(hrResumesFolderId, "Other");
+    // Uploads go directly into the "Processed/[Source]" folder
+    var processedFolderId = getOrCreateFolder(hrResumesFolderId, "Processed");
+    var sourceFolderId = getOrCreateFolder(processedFolderId, activeSource);
     var roleFolderId = resolveRoleFolderId(sourceFolderId, roleName);
 
     // Decode base64

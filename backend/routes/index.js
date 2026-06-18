@@ -1,5 +1,10 @@
 import express from 'express';
 import multer from 'multer';
+import mammoth from 'mammoth';
+import { createRequire } from 'module';
+const require = createRequire(import.meta.url);
+const { PDFParse } = require('pdf-parse');
+
 import {
   fetchCandidates,
   fetchCandidateByEmail,
@@ -10,7 +15,8 @@ import {
   fetchDepartmentCandidates,
   triggerResumeProcessing,
   repairCandidatesWorkflow,
-  uploadResumeToDrive
+  uploadResumeToDrive,
+  parseResumeTextWithLLM
 } from '../services/candidateService.js';
 import { ingestCandidate } from '../services/candidateSourceService.js';
 import authRouter from './auth.js';
@@ -181,7 +187,8 @@ router.post('/resumes/process', async (req, res) => {
 
 router.post('/resumes/upload', upload.array('resumes'), async (req, res) => {
   try {
-    const { departmentId } = req.body;
+    const { departmentId, source } = req.body;
+    const chosenSource = source || 'Website';
     const files = req.files;
 
     if (!departmentId) {
@@ -192,25 +199,98 @@ router.post('/resumes/upload', upload.array('resumes'), async (req, res) => {
       return res.status(400).json({ success: false, error: 'No files were uploaded' });
     }
 
-    console.log(`[BACKEND] Received ${files.length} resume upload request for department: ${departmentId}`);
+    console.log(`[BACKEND] Received ${files.length} resume upload request for department: ${departmentId} with source: ${chosenSource}`);
 
     const results = [];
+    const deptMap = {
+      'sustainability': 'Sustainability',
+      'ai-data-engineer': 'AI/Data Engineer',
+      'web-developer': 'Web Developer',
+      'marketing': 'Marketing',
+      'creative': 'Creative',
+      'others': 'Others'
+    };
+    const roleName = deptMap[departmentId] || 'Others';
+
     for (const file of files) {
-      const result = await uploadResumeToDrive(file.buffer, file.originalname, departmentId);
-      results.push({
-        fileName: file.originalname,
-        success: true,
-        fileId: result.fileId
-      });
+      try {
+        let extractedText = '';
+        const ext = file.originalname.split('.').pop().toLowerCase();
+
+        if (ext === 'pdf') {
+          console.log(`[BACKEND] Extracting text from PDF: ${file.originalname}`);
+          const parser = new PDFParse({ data: file.buffer });
+          const pdfData = await parser.getText();
+          extractedText = pdfData.text || '';
+          await parser.destroy();
+        } else if (ext === 'txt') {
+          extractedText = file.buffer.toString('utf-8');
+        } else if (ext === 'docx') {
+          console.log(`[BACKEND] Extracting text from DOCX: ${file.originalname}`);
+          const result = await mammoth.convertToMarkdown({ buffer: file.buffer });
+          extractedText = result.value || '';
+        } else {
+          throw new Error(`Unsupported file format: .${ext}. Only PDF, DOCX, and TXT files are supported for instant parsing.`);
+        }
+
+        if (!extractedText.trim()) {
+          throw new Error('Could not extract any text from the uploaded resume.');
+        }
+
+        // 1. Call Groq LLM to parse candidate details directly from backend
+        console.log(`[BACKEND] Calling Groq LLM to parse details for: ${file.originalname}`);
+        const parsedDetails = await parseResumeTextWithLLM(extractedText);
+        console.log('[BACKEND] Extracted Details:', JSON.stringify(parsedDetails));
+
+        // 2. Upload the original file directly to Google Drive (which now puts it in the Processed folder)
+        console.log(`[BACKEND] Uploading ${file.originalname} to Google Drive...`);
+        const driveResult = await uploadResumeToDrive(file.buffer, file.originalname, departmentId, chosenSource);
+
+        // 3. Format details and ingest candidate to Google Sheets
+        const candidateData = {
+          candidateName: parsedDetails.name || file.originalname.split('.')[0],
+          email: parsedDetails.email,
+          role: roleName,
+          phoneNumber: parsedDetails.phone,
+          ug: parsedDetails.ug,
+          pg: parsedDetails.pg,
+          college: parsedDetails.college,
+          location: parsedDetails.location || 'N/A',
+          linkedin: parsedDetails.linkedin,
+          github: parsedDetails.github,
+          status: 'Submitted',
+          emailStatus: 'Pending',
+          source: chosenSource,
+          resumeFileId: driveResult.fileId
+        };
+
+        console.log(`[BACKEND] Ingesting candidate to Google Sheets: ${candidateData.candidateName}`);
+        await ingestCandidate(candidateData, chosenSource);
+
+        results.push({
+          fileName: file.originalname,
+          success: true,
+          fileId: driveResult.fileId,
+          candidateName: candidateData.candidateName
+        });
+      } catch (fileErr) {
+        console.error(`[BACKEND] Failed to parse/upload resume ${file.originalname}:`, fileErr);
+        results.push({
+          fileName: file.originalname,
+          success: false,
+          error: fileErr.message
+        });
+      }
     }
 
+    const successCount = results.filter(r => r.success).length;
     res.json({
-      success: true,
-      message: `Successfully uploaded ${files.length} resume(s) to Google Drive.`,
+      success: successCount > 0,
+      message: `Successfully processed ${successCount} of ${files.length} resume(s).`,
       results
     });
   } catch (error) {
-    console.error('[BACKEND] Resume upload failed:', error);
+    console.error('[BACKEND] Resume upload and parsing failed:', error);
     res.status(500).json({ success: false, error: error.message });
   }
 });

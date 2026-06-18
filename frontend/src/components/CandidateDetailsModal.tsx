@@ -31,39 +31,26 @@ interface CandidateDetailsModalProps {
 const getStatusBadgeClass = (status: string) => {
   switch (status) {
     case 'Submitted':
-      return 'bg-gray-50 text-gray-700 border-gray-100';
+      return 'bg-white text-gray-800 border-gray-200';
     case 'Shortlisted':
-      return 'bg-[#F4F9EC] text-[#2D6A2D] border-[#8CC63F]/20';
+      return 'bg-white text-gray-800 border-brand/50';
     case 'Scheduled':
-      return 'bg-[#FEF9E7] text-[#B7950B] border-[#F9E79F]';
+      return 'bg-white text-gray-800 border-amber-300';
     case 'Interviewing':
-      return 'bg-[#F4F9EC] text-[#1B4332] border-[#8CC63F]/20';
+      return 'bg-white text-gray-800 border-brand/50';
     case 'Selected':
-      return 'bg-[#EDF9E8] text-[#2D6A2D] border-[#D7F1C8]';
+      return 'bg-white text-gray-800 border-green-400';
     case 'Rejected':
-      return 'bg-[#FFF5F5] text-[#C92A2A] border-[#FFC9C9]';
+      return 'bg-white text-gray-800 border-red-300';
     case 'On Hold':
-      return 'bg-[#FEF9E7] text-[#B7950B] border-[#F9E79F]';
+      return 'bg-white text-gray-800 border-amber-300';
     default:
-      return 'bg-[#F4F7F5] text-gray-500 border-[#E3ECE6]';
+      return 'bg-white text-gray-800 border-gray-200';
   }
 };
 
-const getSourceBadgeClass = (source?: string) => {
-  switch (source) {
-    case 'LinkedIn':
-      return 'bg-gray-100 text-gray-800 border-gray-200';
-    case 'Career Page':
-      return 'bg-[#EDF9E8] text-[#2D6A2D] border-[#D7F1C8]';
-    case 'Referral':
-      return 'bg-[#FEF9E7] text-[#B7950B] border-[#F9E79F]';
-    case 'Website':
-      return 'bg-gray-100 text-gray-800 border-gray-200';
-    case 'Manual Entry':
-      return 'bg-gray-100 text-gray-800 border-gray-200';
-    default:
-      return 'bg-gray-50 text-gray-600 border-gray-100';
-  }
+const getSourceBadgeClass = (_source?: string) => {
+  return 'bg-white text-gray-600 border-gray-200';
 };
 
 const CandidateDetailsModal: React.FC<CandidateDetailsModalProps> = ({
@@ -185,10 +172,10 @@ const CandidateDetailsModal: React.FC<CandidateDetailsModalProps> = ({
   };
 
   return (
-    <Modal 
-      isOpen={isOpen} 
-      onClose={onClose} 
-      title="Candidate Profile Details" 
+    <Modal
+      isOpen={isOpen}
+      onClose={onClose}
+      title="Candidate Profile Details"
       size="lg"
       footer={
         <>
@@ -264,12 +251,11 @@ const CandidateDetailsModal: React.FC<CandidateDetailsModalProps> = ({
             <Send className="w-5 h-5 text-brand shrink-0 mt-0.5" />
             <div className="space-y-0.5">
               <span className="text-[10px] text-gray-400 font-semibold uppercase tracking-wider block">Letter Dispatch</span>
-              <span className={`inline-flex text-[10px] font-bold px-2.5 py-0.5 rounded-full uppercase mt-1 border ${
-                  extra.emailStatus && extra.emailStatus.toLowerCase().includes('sent')
-                    ? 'bg-[#EDF9E8] text-[#2D6A2D] border-[#D7F1C8]'
-                    : extra.emailStatus === 'Interview Scheduled'
-                    ? 'bg-[#FEF9E7] text-[#B7950B] border-[#F9E79F]'
-                    : 'bg-amber-50 text-amber-700 border-amber-100'
+              <span className={`inline-flex text-[10px] font-bold px-2.5 py-0.5 rounded-full uppercase mt-1 border ${extra.emailStatus && extra.emailStatus.toLowerCase().includes('sent')
+                ? 'bg-white text-green-700 border-green-300'
+                : extra.emailStatus === 'Interview Scheduled'
+                  ? 'bg-white text-amber-700 border-amber-300'
+                  : 'bg-white text-amber-700 border-amber-200'
                 }`}>
                 {extra.emailStatus || 'Pending'}
               </span>
@@ -283,13 +269,13 @@ const CandidateDetailsModal: React.FC<CandidateDetailsModalProps> = ({
               <div className="space-y-0.5">
                 <span className="text-[10px] text-gray-400 font-semibold uppercase tracking-wider block">Interview Date</span>
                 <span className="text-sm font-semibold text-brand-text">
-                  {!isNaN(new Date(extra.interviewDate).getTime()) 
+                  {!isNaN(new Date(extra.interviewDate).getTime())
                     ? new Date(extra.interviewDate).toLocaleDateString('en-US', {
-                        weekday: 'short',
-                        year: 'numeric',
-                        month: 'short',
-                        day: 'numeric'
-                      }) 
+                      weekday: 'short',
+                      year: 'numeric',
+                      month: 'short',
+                      day: 'numeric'
+                    })
                     : extra.interviewDate}
                 </span>
               </div>
