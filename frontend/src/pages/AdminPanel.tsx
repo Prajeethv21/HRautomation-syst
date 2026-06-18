@@ -279,7 +279,7 @@ const AdminPanel: React.FC = () => {
       {/* Upper Panel Header */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 bg-white p-6 rounded-2xl border border-brand-border shadow-[0_4px_20px_rgba(0,0,0,0.02)]">
         <div>
-          <h1 className="text-2xl font-bold text-brand-text">User Access Management</h1>
+          <h1 className="text-lg md:text-2xl font-bold text-brand-text">User Access Management</h1>
           <p className="text-xs text-gray-500 mt-1">Manage portal roles, system registrations, and view internal action audits.</p>
         </div>
         <div className="flex items-center gap-3">
@@ -295,8 +295,8 @@ const AdminPanel: React.FC = () => {
         </div>
       </div>
 
-      {/* Tabs Layout */}
-      <div className="flex border-b border-brand-border">
+      {/* Tabs Layout - horizontally scrollable on mobile */}
+      <div className="flex border-b border-brand-border overflow-x-auto whitespace-nowrap">
         <button
           onClick={() => { setActiveTab('pending'); setSelectedUserId(null); }}
           className={`flex items-center gap-2 px-6 py-3.5 text-sm font-bold border-b-2 transition-colors duration-150 ${

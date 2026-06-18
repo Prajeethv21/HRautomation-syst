@@ -195,13 +195,13 @@ const Dashboard: React.FC = () => {
           Departments Directory
         </h2>
         {loading ? (
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 md:gap-6">
             {[...Array(3)].map((_, i) => (
               <div key={i} className="bg-white border border-brand-border p-6 rounded-2xl shadow-sm h-[196px] animate-pulse flex flex-col justify-between" />
             ))}
           </div>
         ) : (
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 md:gap-6">
             {DEPARTMENTS.map((dept) => {
               const stats = deptStats[dept.id] || { total: 0, selected: 0, interviewing: 0, onHold: 0, rejected: 0 };
               const DeptIcon = DEPARTMENT_ICONS[dept.id] || Briefcase;
@@ -292,10 +292,10 @@ const Dashboard: React.FC = () => {
           ) : (
             <div className="divide-y divide-brand-border">
               {recentCandidates.map((candidate, idx) => (
-                <div key={`${candidate.email}-${idx}`} className="py-3.5 flex items-center justify-between first:pt-0 last:pb-0 hover:bg-brand-light/20 px-3 rounded-xl transition-all duration-200">
-                  <div>
-                    <h4 className="text-sm font-bold text-brand-text font-jakarta">{candidate.candidateName}</h4>
-                    <p className="text-xs text-gray-400 mt-0.5">{candidate.role} • {candidate.email}</p>
+                <div key={`${candidate.email}-${idx}`} className="py-3.5 flex items-center justify-between first:pt-0 last:pb-0 hover:bg-brand-light/20 px-3 rounded-xl transition-all duration-200 gap-3">
+                  <div className="min-w-0 flex-1">
+                    <h4 className="text-sm font-bold text-brand-text font-jakarta truncate">{candidate.candidateName}</h4>
+                    <p className="text-xs text-gray-400 mt-0.5 truncate">{candidate.role} · <span className="hidden sm:inline">{candidate.email}</span></p>
                   </div>
                   <div className="flex items-center gap-3">
                     <span

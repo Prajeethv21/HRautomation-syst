@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import Sidebar from './components/Sidebar';
 import Header from './components/Header';
@@ -15,6 +15,7 @@ import { DEPARTMENTS } from './config/departments';
 
 const AppLayout: React.FC = () => {
   const location = useLocation();
+  const [sidebarOpen, setSidebarOpen] = useState(false);
 
   const getPageTitle = (pathname: string) => {
     if (pathname.startsWith('/dashboard')) return '';
@@ -30,16 +31,27 @@ const AppLayout: React.FC = () => {
 
   return (
     <div className="flex min-h-screen bg-white">
+      {/* Mobile backdrop overlay */}
+      {sidebarOpen && (
+        <div
+          className="fixed inset-0 z-30 bg-black/40 backdrop-blur-sm lg:hidden"
+          onClick={() => setSidebarOpen(false)}
+        />
+      )}
+
       {/* Navigation Sidebar */}
-      <Sidebar />
+      <Sidebar isOpen={sidebarOpen} onClose={() => setSidebarOpen(false)} />
 
       {/* Main Panel Content */}
       <div className="flex-1 flex flex-col min-w-0">
         {/* Topbar Header */}
-        <Header title={getPageTitle(location.pathname)} />
+        <Header
+          title={getPageTitle(location.pathname)}
+          onMenuClick={() => setSidebarOpen(true)}
+        />
 
         {/* Dynamic Route Content */}
-        <main className="p-8 flex-1 bg-[#F9FAFB]">
+        <main className="p-4 md:p-8 flex-1 bg-[#F9FAFB]">
           <Routes>
             <Route path="/dashboard" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
             <Route path="/candidates" element={<ProtectedRoute><Candidates /></ProtectedRoute>} />
