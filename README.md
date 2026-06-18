@@ -11,7 +11,7 @@ DeepwoodsAutomation/
 ├── frontend/                 # React SPA (Vite + TypeScript + Tailwind CSS)
 │   ├── src/
 │   │   ├── components/      # UI components (Button, Modal, Card, Toast, Sidebar, Header)
-│   │   ├── pages/           # View pages (Dashboard, Candidates, Settings)
+│   │   ├── pages/           # View pages (Dashboard, Candidates, DepartmentDetails, AdminPanel, Login, Register)
 │   │   ├── services/        # Axios API Client service
 │   │   ├── App.tsx          # Router layout & application root
 │   │   └── index.css        # Tailwind style directives & Google typography
@@ -79,13 +79,13 @@ Ensure your Google Sheet contains the following columns in order (Row 1 is heade
 
 ### 3. Connect the Portal
 1. Open the portal in your browser: [http://localhost:5173](http://localhost:5173).
-2. Navigate to **Settings** in the left sidebar.
-3. Input your:
+2. Navigate to **Admin Panel** in the left sidebar (sign in with your administrator account).
+3. Under **Portal Configuration**, input your:
    - **Google Apps Script Web App URL** (copied in the previous step)
    - **Google Sheet ID** (extracted from your Spreadsheet browser URL)
    - **Google Docs Template ID** (the ID of your document template containing placeholders like `{{Candidate Name}}`, `{{Role}}`, `{{Joining Date}}`)
 4. Click **Save Configuration**.
-5. Click **Test Sync** to run a diagnostic test. Once connected, a green **Google Sheets Active** badge will appear in the top header, and your live sheet data will populate the portal.
+5. Click **Test Sync** or **Sync Candidates** to run a diagnostic test. Once connected, a green **Google Sheets Active** badge will appear in the top header, and your live sheet data will populate the portal.
 
 ---
 
