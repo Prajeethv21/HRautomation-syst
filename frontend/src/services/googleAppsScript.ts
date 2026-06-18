@@ -252,6 +252,14 @@ async function fetchWithRetry(url: string, maxRetries = 2, baseDelayMs = 2000): 
   throw lastError;
 }
 
+// Ensure a URL always starts with https:// so the browser opens it externally
+const normalizeUrl = (url: string | undefined): string => {
+  if (!url || url.trim() === '') return '';
+  const trimmed = url.trim();
+  if (trimmed.startsWith('http://') || trimmed.startsWith('https://')) return trimmed;
+  return 'https://' + trimmed.replace(/^\/+/, '');
+};
+
 export const getDepartmentCandidates = async (sheetName: string): Promise<DepartmentCandidate[]> => {
   try {
     const response = await fetchWithRetry(`/api/departments/${encodeURIComponent(sheetName)}`);
@@ -263,7 +271,12 @@ export const getDepartmentCandidates = async (sheetName: string): Promise<Depart
     const responseData = await response.json();
 
     if (responseData && responseData.success && Array.isArray(responseData.candidates)) {
-      return responseData.candidates;
+      // Normalize linkedin/github URLs so bare links (linkedin.com/...) open correctly
+      return responseData.candidates.map((c: DepartmentCandidate) => ({
+        ...c,
+        linkedin: normalizeUrl(c.linkedin),
+        github: normalizeUrl(c.github),
+      }));
     }
 
     throw new Error(responseData?.message || 'Invalid data received from proxy backend');

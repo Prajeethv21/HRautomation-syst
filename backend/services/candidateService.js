@@ -554,6 +554,13 @@ export async function parseResumeTextWithLLM(text) {
       if (response.status === 200 && response.data?.choices?.[0]?.message?.content) {
         console.log(`[BACKEND] Groq LLM parsed successfully using ${modelName}`);
         const parsedContent = JSON.parse(response.data.choices[0].message.content.trim());
+        // Normalize URLs — ensure linkedin and github always have https:// prefix
+        if (parsedContent.linkedin && !parsedContent.linkedin.startsWith('http')) {
+          parsedContent.linkedin = 'https://' + parsedContent.linkedin.replace(/^\/+/, '');
+        }
+        if (parsedContent.github && !parsedContent.github.startsWith('http')) {
+          parsedContent.github = 'https://' + parsedContent.github.replace(/^\/+/, '');
+        }
         return parsedContent;
       }
     } catch (err) {
