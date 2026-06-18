@@ -3,6 +3,10 @@
     {
       "source": "/api/:path*",
       "destination": "https://h-rautomation-syst.vercel.app/api/:path*"
+    },
+    {
+      "source": "/(.*)",
+      "destination": "/index.html"
     }
   ]
 }
