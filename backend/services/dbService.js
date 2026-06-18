@@ -4,13 +4,27 @@ import { fileURLToPath } from 'url';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
-const DB_FILE = path.join(__dirname, '..', 'database.json');
+const ORIGINAL_DB_FILE = path.join(__dirname, '..', 'database.json');
+const DB_FILE = process.env.VERCEL 
+  ? path.join('/tmp', 'database.json') 
+  : ORIGINAL_DB_FILE;
 
 // Initialize database file if it doesn't exist
 async function initDb() {
   try {
     await fs.access(DB_FILE);
   } catch (error) {
+    if (process.env.VERCEL) {
+      // On Vercel, copy the original database.json from the read-only package bundle to /tmp
+      try {
+        const originalContent = await fs.readFile(ORIGINAL_DB_FILE, 'utf-8');
+        await fs.writeFile(DB_FILE, originalContent, 'utf-8');
+        console.log('[DB] Successfully initialized database.json in /tmp');
+        return;
+      } catch (copyErr) {
+        console.error('[DB] Failed to copy database.json to /tmp, fallback to empty:', copyErr);
+      }
+    }
     const initialData = {
       users: [],
       sessions: [],
