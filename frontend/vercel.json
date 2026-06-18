@@ -2,7 +2,7 @@
   "rewrites": [
     {
       "source": "/api/:path*",
-      "destination": "https://CHANGE_THIS_TO_YOUR_BACKEND_URL.vercel.app/api/:path*"
+      "destination": "https://h-rautomation-syst.vercel.app/*"
     }
   ]
 }
